@@ -28,6 +28,7 @@ tr:
       account_updated: Hesap güncellendi
     errors:
       amount_required: Tutar gereklidir
+      instrument_account: Bu hesap birimleriyle değerlenir. Bunun yerine bakiyesini güncelleyin.
     form:
       amount: Tutar
       submit: Bakiye güncellemesi ekle

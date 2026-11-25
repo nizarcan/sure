@@ -101,12 +101,6 @@ class CustomInstrumentsController < ApplicationController
     end
 
     @accounts = eligible_accounts
-
-    # Back from creating the account the empty state offered: with only that
-    # one to choose from, go straight on to adding the units.
-    if params[:account_created].present? && @accounts.one?
-      redirect_to new_trade_path(account_id: @accounts.first.id, type: Trade::CreateForm::OPENING_TYPE, security: "#{@instrument.security.ticker}||custom")
-    end
   end
 
   def preview
@@ -166,13 +160,18 @@ class CustomInstrumentsController < ApplicationController
     end
 
     def eligible_accounts
-      Current.user.accessible_accounts
-             .writable_by(Current.user)
-             .visible
-             .manual
-             .where(accountable_type: %w[Investment Crypto])
-             .alphabetically
-             .to_a
+      accounts = Current.user.accessible_accounts
+                        .writable_by(Current.user)
+                        .visible
+                        .manual
+                        .where(accountable_type: %w[Investment Crypto])
+                        .includes(:custom_instrument)
+                        .alphabetically
+                        .to_a
+      # Accounts already held in this instrument add units directly, without
+      # moving cash, so they come before the accounts that would book a trade.
+      instrument_accounts, trade_accounts = accounts.partition { |account| account.custom_instrument_id == @instrument.id }
+      instrument_accounts + trade_accounts
     end
 
     def preview_currency

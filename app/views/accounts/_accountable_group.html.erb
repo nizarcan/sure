@@ -1,6 +1,7 @@
 <%# locals: (account_group:, mobile: false, all_tab: false, open: nil, sortable: false, **args) %>
 
 <% copy = account_group.dom_id(tab: all_tab ? :all : nil, mobile: mobile) %>
+<% Account.preload_unit_balances(account_group.accounts) %>
 <div id="<%= copy %>" data-group-key="<%= account_group.key %>">
   <% is_open = open.nil? ? (account_group.accounts.any? { |account| page_active?(account_path(account)) } || Current.user.always_expanded_account_group?(account_group.key)) : open %>
   <%# The summary owns the name's slide: it is what a tap or keyboard focus
@@ -102,6 +103,9 @@
 
           <div class="ml-auto text-right grow h-10">
             <%= tag.p format_money(account.balance_money), class: "text-sm font-medium text-primary whitespace-nowrap privacy-sensitive" %>
+            <% if account.unit_balance_display %>
+              <%= tag.p account.unit_balance_display, class: "text-xs text-secondary whitespace-nowrap privacy-sensitive" %>
+            <% end %>
             <% account_version = sidebar_sparkline_versions(Current.family)[account.id] %>
             <%= tag.div id: sidebar_sparkline_wrapper_id(copy, account.id, account_version), data: kept_element_data do %>
               <%= turbo_frame_tag dom_id(account, :sparkline),

@@ -1,0 +1,46 @@
+<% symbol = @account.custom_instrument.symbol %>
+<% current_quantity = Account::UnitBalance.format_quantity(@account.unit_balance_on(@date || Date.current)) %>
+
+<%= render DS::Dialog.new do |dialog| %>
+  <% dialog.with_header(title: t(".titles.#{@mode}", symbol: symbol)) %>
+  <% dialog.with_body do %>
+    <%= styled_form_with url: account_unit_balance_path(@account, mode: @mode), scope: :unit_balance, class: "space-y-4" do |form| %>
+      <%= form.hidden_field :mode, value: @mode %>
+
+      <% if @error_message.present? %>
+        <%= render DS::Alert.new(message: @error_message, variant: :error) %>
+      <% end %>
+
+      <div class="space-y-3">
+        <%= form.date_field :date, label: true, required: true, value: @date || Date.current, min: Entry.min_supported_date, max: Date.current %>
+
+        <%= form.number_field :quantity,
+            label: t(".quantity", symbol: symbol),
+            value: @quantity,
+            step: "any",
+            min: (@mode == "set" ? 0 : 0.000000000000000001),
+            required: true %>
+
+        <p class="text-xs text-secondary">
+          <%= t(".current_quantity", quantity: current_quantity, symbol: symbol, date: l(@date || Date.current, format: :long)) %>
+        </p>
+
+        <% if @mode == "add" %>
+          <%= form.money_field :unit_price,
+              label: t(".price_paid"),
+              currency_value_override: @account.currency,
+              hide_currency: true,
+              step: "any",
+              precision: 10,
+              value: @unit_price&.to_d %>
+          <p class="text-xs text-secondary"><%= t(".price_paid_hint") %></p>
+        <% end %>
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <%= render DS::Button.new(text: t(".cancel"), variant: :secondary, data: { action: "DS--dialog#close" }) %>
+        <%= render DS::Button.new(text: t(".submit.#{@mode}"), type: :submit) %>
+      </div>
+    <% end %>
+  <% end %>
+<% end %>

@@ -118,10 +118,17 @@ class Trade::CreateForm
       ticker.present? || manual_ticker.present?
     end
 
+    # An instrument account holds only its own instrument; another security
+    # would be a second position the account's balance form knows nothing about.
+    def instrument_security_mismatch?(sec)
+      account.instrument_account? && sec.present? && sec.id != account.custom_instrument.security_id
+    end
+
     def create_trade
       sec = security
 
       return entry_with_error("trades.form.trade_requires_security") unless sec
+      return entry_with_error("trades.form.instrument_account_security") if instrument_security_mismatch?(sec)
 
       signed_qty = sell_side_trade? ? -qty.to_d.abs : qty.to_d.abs
       signed_amount = signed_qty * price.to_d + fee.to_d
@@ -156,6 +163,7 @@ class Trade::CreateForm
       sec = security
 
       return entry_with_error("trades.form.trade_requires_security") unless sec
+      return entry_with_error("trades.form.instrument_account_security") if instrument_security_mismatch?(sec)
 
       quantity = qty.to_d.abs
       return entry_with_error("trades.form.qty_must_be_positive") unless quantity.positive?
@@ -190,6 +198,7 @@ class Trade::CreateForm
       sec = security
 
       return entry_with_error("trades.form.dividend_requires_security") unless sec
+      return entry_with_error("trades.form.instrument_account_security") if instrument_security_mismatch?(sec)
 
       label = CASH_TRADE_LABELS.fetch("dividend")
       create_income_trade(sec: sec, label: label, name: "#{label}: #{sec.display_ticker}")
@@ -201,8 +210,11 @@ class Trade::CreateForm
     # Interest in an investment account is always a Trade.
     # Falls back to a synthetic cash security when none is selected.
     def create_interest_income
+      return entry_with_error("trades.form.instrument_account_security") if account.instrument_account? && !ticker_present?
+
       sec = ticker_present? ? security : Security.cash_for(account, currency: currency)
       return entry_with_error("trades.form.security_not_found") unless sec
+      return entry_with_error("trades.form.instrument_account_security") if instrument_security_mismatch?(sec)
 
       label = CASH_TRADE_LABELS.fetch("interest")
       name = sec.cash? ? label : "#{label}: #{sec.display_ticker}"
@@ -210,8 +222,11 @@ class Trade::CreateForm
     end
 
     def create_fee
+      return entry_with_error("trades.form.instrument_account_security") if account.instrument_account? && !ticker_present?
+
       sec = ticker_present? ? security : Security.cash_for(account, currency: currency)
       return entry_with_error("trades.form.security_not_found") unless sec
+      return entry_with_error("trades.form.instrument_account_security") if instrument_security_mismatch?(sec)
 
       label = CASH_TRADE_LABELS.fetch("fee")
       name = sec.cash? ? label : "#{label}: #{sec.display_ticker}"

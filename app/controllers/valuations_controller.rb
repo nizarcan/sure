@@ -1,6 +1,10 @@
 class ValuationsController < ApplicationController
   include EntryableResource, StreamExtensions
 
+  # An instrument account is valued by its units and the instrument's price, so
+  # a cash valuation would be a second, competing source of truth.
+  before_action :refuse_instrument_account, only: %i[new confirm_create create]
+
   def confirm_create
     @account = accessible_accounts.find(params.dig(:entry, :account_id))
     return unless require_account_permission!(@account)
@@ -116,5 +120,17 @@ class ValuationsController < ApplicationController
   private
     def entry_params
       params.require(:entry).permit(:date, :amount, :notes)
+    end
+
+    def refuse_instrument_account
+      account = accessible_accounts.find_by(id: params.dig(:entry, :account_id) || params[:account_id])
+      return unless account&.instrument_account?
+
+      path = new_account_unit_balance_path(account, mode: "set")
+      alert = t("valuations.errors.instrument_account")
+      respond_to do |format|
+        format.html { redirect_to path, alert: alert }
+        format.turbo_stream { stream_redirect_to(path, alert: alert) }
+      end
     end
 end

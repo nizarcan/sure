@@ -145,6 +145,11 @@ export default class extends Controller {
 
   handleCurrencyChange(e) {
     const selectedCurrency = e.target.value;
+    // A custom instrument in the investment form's picker is not a currency:
+    // there is no currency record to fetch. instrument-account-form switches
+    // the field to that instrument's unit instead.
+    if (selectedCurrency.startsWith("instrument:")) return;
+
     this.updateAmount(selectedCurrency);
   }
 

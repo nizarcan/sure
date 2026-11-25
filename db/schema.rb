@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_25_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -118,9 +118,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_090000) do
     t.string "status", default: "active"
     t.string "subtype"
     t.datetime "updated_at", null: false
+    t.uuid "custom_instrument_id"
     t.index ["accountable_id", "accountable_type"], name: "index_accounts_on_accountable_id_and_accountable_type"
     t.index ["accountable_type"], name: "index_accounts_on_accountable_type"
     t.index ["currency"], name: "index_accounts_on_currency"
+    t.index ["custom_instrument_id"], name: "index_accounts_on_custom_instrument_id"
     t.index ["family_id", "accountable_type"], name: "index_accounts_on_family_id_and_accountable_type"
     t.index ["family_id", "exclude_from_reports"], name: "index_accounts_on_family_id_and_exclude_from_reports"
     t.index ["family_id", "id"], name: "index_accounts_on_family_id_and_id"
@@ -3200,6 +3202,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_090000) do
   add_foreign_key "account_statements", "accounts", column: "suggested_account_id", on_delete: :nullify
   add_foreign_key "account_statements", "accounts", on_delete: :nullify
   add_foreign_key "account_statements", "families", on_delete: :cascade
+  add_foreign_key "accounts", "custom_instruments", on_delete: :restrict
   add_foreign_key "accounts", "families"
   add_foreign_key "accounts", "imports"
   add_foreign_key "accounts", "plaid_accounts"

@@ -5,7 +5,37 @@
                    elsif form.object && form.object.respond_to?(currency_method)
                      form.object.public_send(currency_method)
                    end
-   currency = Money::Currency.new(currency_value || options[:default_currency] || "USD")
+   # A picker that offers custom instruments stores `instrument:<uuid>` as the
+   # currency. The instrument's own currency says how to format the amount, and
+   # its symbol replaces the currency symbol: the field then holds units.
+   instrument_capable = options[:instrument_options].present?
+   instrument_selection = currency_value.to_s.start_with?("instrument:")
+   selected_instrument = instrument_selection && form.object.respond_to?(:custom_instrument) ? form.object.custom_instrument : nil
+   currency_code = if instrument_selection
+                     selected_instrument&.currency || options[:default_currency] || "USD"
+                   else
+                     currency_value || options[:default_currency] || "USD"
+                   end
+   currency = Money::Currency.new(currency_code)
+   selected_currency_value = instrument_selection ? currency_value.to_s : currency.iso_code
+   amount_value = if options[:value]
+                    options[:value]
+                  elsif form.object && form.object.respond_to?(amount_method)
+                    form.object.public_send(amount_method)
+                  end
+   label_text = options[:label] || t(".label")
+   label_markup = if instrument_capable
+                    content_tag(:span,
+                                instrument_selection ? t(".quantity") : label_text,
+                                data: {
+                                  instrument_account_form_target: "amountLabel",
+                                  money_label: label_text,
+                                  quantity_label: t(".quantity")
+                                })
+                  else
+                    label_text
+                  end
+   operator_row_attributes = instrument_capable ? { "instrument-account-form-target": "operatorRow" } : {}
    # A text input has no native min/max constraint, so the bounds the old
    # number_field enforced (the caller's, or these defaults) are handed to
    # money_field_controller, which checks the evaluated amount against them.
@@ -28,7 +58,7 @@
   <% if options[:label_tooltip] %>
     <div class="form-field__header">
       <%= form.label amount_method, class: class_names("form-field__label", options[:label_class]) do %>
-        <%= options[:label] || t(".label") %>
+        <%= label_markup %>
         <% if options[:required] %>
           <span class="text-destructive ml-0.5">*</span>
         <% end %>
@@ -47,7 +77,7 @@
   <div class="form-field__body">
     <% unless options[:label_tooltip] %>
       <%= form.label amount_method, class: class_names("form-field__label", options[:label_class]) do %>
-        <%= options[:label] || t(".label") %>
+        <%= label_markup %>
         <% if options[:required] %>
           <span class="text-destructive ml-0.5">*</span>
         <% end %>
@@ -56,29 +86,34 @@
 
     <div class="flex items-center gap-1">
       <div class="flex items-center grow gap-1">
-        <span class="text-subdued text-sm" data-money-field-target="symbol">
-          <%= currency.symbol %>
-        </span>
+        <%= tag.span(
+          instrument_selection && selected_instrument ? selected_instrument.symbol : currency.symbol,
+          class: "text-subdued text-sm",
+          data: {
+            money_field_target: "symbol"
+          }.merge(instrument_capable ? { instrument_account_form_target: "amountSymbol" } : {})
+        ) %>
 
         <%= form.text_field amount_method,
           class: class_names("form-field__input", options[:input_class]),
           inline: true,
           placeholder: options[:placeholder] || "100",
           inputmode: "decimal",
-          value: if options[:value]
-            sprintf("%.#{options[:precision].presence || currency.default_precision}f", options[:value])
-          elsif form.object && form.object.respond_to?(amount_method)
-            val = form.object.public_send(amount_method)
-            sprintf("%.#{options[:precision].presence || currency.default_precision}f", val) if val.present?
+          value: if amount_value.present?
+            if instrument_selection
+              Account::UnitBalance.format_quantity(amount_value)
+            else
+              sprintf("%.#{options[:precision].presence || currency.default_precision}f", amount_value)
+            end
           end,
-          step: options[:step] || currency.step,
+          step: instrument_selection ? "any" : (options[:step] || currency.step),
           disabled: options[:disabled],
           autofocus: options[:autofocus],
           data: (options[:amount_data] || {}).merge({
             "money-field-target": "amount",
             "auto-submit-form-target": ("auto" if options[:auto_submit]),
             action: [ options.dig(:amount_data, :action), "paste->money-field#pasteAmount", "blur->money-field#normalizeAmount" ].compact.join(" ")
-          }.compact),
+          }.merge(instrument_capable ? { "instrument-account-form-target": "amount" } : {}).compact),
           required: options[:required],
           aria: options[:aria],
           **options.slice(:name) %>
@@ -97,10 +132,27 @@
              }.compact)
              # Preserve any existing action and append money-field handler
              existing_action = currency_data.delete("action")
-             currency_data["action"] = ["change->money-field#handleCurrencyChange", existing_action].compact.join(" ") %>
+             actions = ["change->money-field#handleCurrencyChange", existing_action]
+             if instrument_capable
+               currency_data["instrument-account-form-target"] = "currency"
+               actions << "change->instrument-account-form#change"
+             end
+             currency_data["action"] = actions.compact.join(" ")
+             currency_codes = currency_picker_options_for_family(extra: currency.iso_code)
+             currency_choices = if instrument_capable
+               grouped_options_for_select(
+                 [
+                   [ t(".instruments_group"), options[:instrument_options] ],
+                   [ t(".currencies_group"), currency_codes.map { |code| [ currency_label(code), code ] } ]
+                 ],
+                 selected_currency_value
+               )
+             else
+               currency_codes
+             end %>
           <%= form.select currency_method,
-                        currency_picker_options_for_family(extra: currency.iso_code),
-                        { inline: true, selected: currency.iso_code },
+                        currency_choices,
+                        { inline: true, selected: selected_currency_value },
                         {
                           class: "w-fit pr-5 disabled:text-subdued form-field__input",
                           disabled: options[:disable_currency],
@@ -140,7 +192,11 @@
         rather than as a separate floating card with its own border and
         gap, so out-of-flow positioning doesn't read as visually detached
         from the field it belongs to. %>
-    <div class="hidden group-focus-within/money-field:flex items-center gap-1 absolute left-0 right-0 top-full -mt-px z-10 bg-container border border-t-0 border-secondary rounded-b-md p-1">
+    <%# An instrument field holds units, not a money expression, so the
+        operator row is hidden while one is selected; it would otherwise cover
+        the field below it for a row of buttons that do not apply. %>
+    <div class="hidden group-focus-within/money-field:flex items-center gap-1 absolute left-0 right-0 top-full -mt-px z-10 bg-container border border-t-0 border-secondary rounded-b-md p-1"<%= tag.attributes(operator_row_attributes) %>
+         style="<%= "display: none" if instrument_selection %>">
       <%= render DS::Button.new(text: "+", variant: :outline, size: :sm,
             data: { action: "mousedown->money-field#insertOperator touchstart->money-field#insertOperator keydown.enter->money-field#insertOperator keydown.space->money-field#insertOperator", "money-field-operator-param": "+" },
             aria: { label: t(".operator_add") }) %>

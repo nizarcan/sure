@@ -31,7 +31,10 @@ tr:
       plural: Aileler
       singular: Aile
     money_field:
+      currencies_group: Para birimleri
+      instruments_group: Enstrümanlarınız
       label: Tutar
+      quantity: Miktar
     preview: Önizleme
     require_admin: Bu işlemi yalnızca yöneticiler gerçekleştirebilir
     sync_toast:

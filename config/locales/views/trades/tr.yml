@@ -27,8 +27,11 @@ tr:
       type_withdrawal: Çekme
       security_not_found: Seçilen menkul kıymet bulunamadı
       qty_must_be_positive: Sahip olduğunuz birim sayısını girin
+      instrument_account_security: Bu hesap yalnızca tek bir enstrüman tutar. Birimlerini hesap sayfasından değiştirin.
       transfer_in_hint: Nakit değişmez. Bu birimler için ödediğiniz tutarı daha sonra varlık
         detayından ayarlayabilirsiniz.
+    trade:
+      unit_change: "%{sign}%{quantity} %{symbol}"
     header:
       buy: Al
       current_market_price_label: Güncel Piyasa Fiyatı

@@ -41,6 +41,8 @@ en:
     chart:
       data_not_available: Data not available for the selected period
     create:
+      instrument_not_found: "That instrument is not available. Choose another."
+      quantity_must_be_positive: "Enter how many units you own."
       success: "%{type} account created"
     logo_caption:
       appstore: From the App Store
@@ -84,6 +86,7 @@ en:
       no_accounts: No accounts yet
     form:
       balance: "Balance on date:"
+      held_in: Held in
       opening_balance_date_label: Opening balance date
       name_label: Account name
       name_placeholder: Example account name
@@ -168,6 +171,9 @@ en:
         new_trade: New trade
         new_transaction: New transaction
         new_transfer: New transfer
+        add_units: "Add %{symbol}"
+        remove_units: "Remove %{symbol}"
+        update_balance: Update balance
         no_entries: No entries found
         search:
           placeholder: Search entries by name
@@ -206,6 +212,21 @@ en:
     update:
       success: "%{type} account updated"
       logo_not_applied: The account was saved, but the chosen icon could not be downloaded. Try again or upload your own.
+    unit_balance:
+      changed: "%{name} (%{change})"
+      display: "%{quantity} %{symbol}"
+      unchanged: "The balance is already %{quantity} %{symbol}."
+      names:
+        add: "Added %{quantity} %{symbol}"
+        remove: "Removed %{quantity} %{symbol}"
+        set: "Balance set to %{quantity} %{symbol}"
+      errors:
+        insufficient_units: "Only %{held} %{symbol} are held on that date, so that is the most you can remove."
+        invalid_price: The price paid cannot be negative.
+        negative_quantity: The quantity cannot be negative.
+        not_an_instrument_account: This account does not hold a custom instrument.
+        not_instrument: This account does not hold a custom instrument.
+        quantity_must_be_positive: Enter a quantity greater than zero.
     sidebar:
       missing_data: Missing historical data
       missing_data_description: "%{product} uses third party providers to fetch historical exchange rates, security prices, and more. This data is required to calculate accurate historical account balances."

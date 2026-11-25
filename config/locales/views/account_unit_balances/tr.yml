@@ -1,0 +1,17 @@
+---
+tr:
+  account_unit_balances:
+    new:
+      titles:
+        add: "%{symbol} ekle"
+        remove: "%{symbol} çıkar"
+        set: Bakiyeyi güncelle
+      quantity: "Miktar (%{symbol})"
+      current_quantity: "%{date} tarihinde şu anda %{quantity} %{symbol} var."
+      price_paid: Birim başına ödenen fiyat
+      price_paid_hint: İsteğe bağlı. Bu birimlerin maliyetini bir alım gibi belirler; böylece kazanç veya kayıp gösterilebilir.
+      cancel: İptal
+      submit:
+        add: Birim ekle
+        remove: Birim çıkar
+        set: Bakiyeyi güncelle

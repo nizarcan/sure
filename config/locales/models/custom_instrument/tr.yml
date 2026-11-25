@@ -19,7 +19,10 @@ tr:
         custom_instrument:
           attributes:
             base:
-              in_use: "Bu enstrüman bir işlem, bir varlık veya başka bir enstrüman tarafından kullanılıyor. Silmek yerine arşivleyin."
+              in_use: "Bu enstrüman bir işlem, bir varlık, bir hesap veya başka bir enstrüman tarafından kullanılıyor. Silmek yerine arşivleyin."
+            currency:
+              held_by_accounts: "%{count} hesap bu enstrümanı tutarken değiştirilemez"
+              metal: "bir metal olamaz. Onu tutan hesabın para birimini kullanın."
             formula:
               cycle: "Bu formül enstrümanlar arasında döngü oluşturur."
               nesting_too_deep: "Enstrümanlar en fazla 5 seviye iç içe olabilir."

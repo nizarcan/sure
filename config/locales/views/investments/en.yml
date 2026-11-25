@@ -5,6 +5,8 @@ en:
       edit: Edit %{account}
     form:
       none: None
+      price_paid_per_unit: Price paid per unit
+      price_paid_per_unit_hint: Optional. Used as the cost of the units you start with.
       subtype_prompt: Select investment type
     new:
       title: Enter account balance

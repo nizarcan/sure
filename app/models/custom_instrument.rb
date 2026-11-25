@@ -7,6 +7,7 @@ class CustomInstrument < ApplicationRecord
 
   belongs_to :family
   belongs_to :security
+  has_many :accounts, dependent: :restrict_with_error
   has_many :components, -> { order(:position) }, class_name: "CustomInstrumentComponent", dependent: :delete_all
 
   before_validation :normalize_attributes
@@ -26,6 +27,8 @@ class CustomInstrument < ApplicationRecord
   validates :currency, presence: true
   validate :symbol_is_not_a_currency
   validate :currency_is_known
+  validate :currency_is_not_a_metal
+  validate :currency_unchanged_while_held, if: -> { persisted? && will_save_change_to_currency? }
   validate :formula_is_resolvable, if: :resolution_needed?
 
   scope :active, -> { where(archived_at: nil) }
@@ -143,7 +146,7 @@ class CustomInstrument < ApplicationRecord
   end
 
   def in_use?
-    trades.exists? || holdings.exists? || dependents.exists?
+    trades.exists? || holdings.exists? || accounts.exists? || dependents.exists?
   end
 
   def positions_for(user)
@@ -215,6 +218,22 @@ class CustomInstrument < ApplicationRecord
       return if Money::Currency.all.key?(currency.downcase)
 
       errors.add(:currency, :invalid)
+    end
+
+    def currency_is_not_a_metal
+      return if currency.blank?
+      return unless CustomInstrument::RateSource::METALS.include?(currency)
+
+      errors.add(:currency, :metal)
+    end
+
+    # An account held in this instrument values it in this currency, so a
+    # change would relabel every balance without repricing it.
+    def currency_unchanged_while_held
+      count = accounts.count
+      return if count.zero?
+
+      errors.add(:currency, :held_by_accounts, count: count)
     end
 
     def resolution_needed?

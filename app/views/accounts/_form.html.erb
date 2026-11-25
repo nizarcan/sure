@@ -1,4 +1,4 @@
-<%# locals: (account:, url:, logo: true, turbo: account.persisted?) %>
+<%# locals: (account:, url:, logo: true, turbo: account.persisted?, instrument_options: nil) %>
 <%# `logo: false` hides the icon block for forms whose controller does not
     save it (properties). With `turbo`, the form submits through Turbo inside
     the modal: an edit saved from an account's page returns to that page as a
@@ -9,22 +9,39 @@
   <%= render DS::Alert.new(message: @error_message, variant: :error) %>
 <% end %>
 
-<%= styled_form_with model: account, url: url, scope: :account, data: (turbo ? {} : { turbo: false }), class: "flex flex-col gap-4 justify-between grow text-primary" do |form| %>
+<% form_data = turbo ? {} : { turbo: false }
+   form_data[:controller] = "instrument-account-form" if instrument_options.present? %>
+
+<%= styled_form_with model: account, url: url, scope: :account, data: form_data, class: "flex flex-col gap-4 justify-between grow text-primary" do |form| %>
   <div class="grow space-y-2">
     <%= form.hidden_field :accountable_type %>
     <%= form.hidden_field :return_to, value: params[:return_to] %>
 
     <%= form.text_field :name, placeholder: t(".name_placeholder"), required: "required", label: t(".name_label") %>
 
-    <% unless account.linked? %>
-      <%= form.money_field :balance, label: t(".balance"), required: true, default_currency: Current.family.currency %>
-    <% end %>
+    <% if account.persisted? && account.instrument_account? %>
+      <div class="rounded-lg bg-container-inset p-3">
+        <p class="text-xs text-secondary"><%= t(".held_in") %></p>
+        <p class="text-sm text-primary">
+          <%= account.custom_instrument.symbol %> –
+          <%= link_to account.custom_instrument.name, custom_instrument_path(account.custom_instrument), class: "underline" %>
+        </p>
+      </div>
+    <% else %>
+      <% unless account.linked? %>
+        <%= form.money_field :balance,
+            label: t(".balance"),
+            required: true,
+            default_currency: Current.family.currency,
+            instrument_options: instrument_options %>
+      <% end %>
 
-    <% if account.new_record? && !account.linked? %>
-      <%= form.date_field :opening_balance_date,
-          label: t(".opening_balance_date_label"),
-          value: Time.zone.today - 2.years,
-          required: true %>
+      <% if account.new_record? && !account.linked? %>
+        <%= form.date_field :opening_balance_date,
+            label: t(".opening_balance_date_label"),
+            value: Time.zone.today - 2.years,
+            required: true %>
+      <% end %>
     <% end %>
 
     <%= yield form %>

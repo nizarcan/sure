@@ -5,6 +5,7 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
   include OnchainTestHelper
   include EntriesTestHelper
   include TradeRepublicSessionTestHelper
+  include CustomInstrumentTestHelper
 
   setup do
     sign_in @user = users(:family_admin)
@@ -2396,7 +2397,45 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-sortable-list-target='item'][data-sortable-list-id=?]", @account.id
   end
 
+  test "an instrument account leads its chart with units and hides the view picker" do
+    account = instrument_account(quantity: 5)
+
+    get account_url(account)
+
+    assert_response :success
+    assert_select "select[name='chart_view']", count: 0
+    assert_select "p.privacy-sensitive", text: "5 GRAU"
+  end
+
+  test "the accounts list shows an instrument account's units beside its money" do
+    instrument_account(quantity: 5)
+
+    get accounts_url
+
+    assert_response :success
+    assert_includes response.body, "5 GRAU"
+  end
+
   private
+    def instrument_account(quantity:)
+      instrument = create_custom_instrument(
+        family: @user.family, name: "Gram gold", symbol: "GRAU", currency: "USD"
+      )
+      account = @user.family.accounts.create!(
+        owner: @user,
+        name: "Gold units",
+        currency: "USD",
+        balance: 0,
+        cash_balance: 0,
+        accountable: Investment.new,
+        custom_instrument: instrument
+      )
+      Account::UnitBalance.new(account).add(quantity: quantity, date: Date.current)
+      # The queued sync would hide the row's figures behind its loading state.
+      account.syncs.destroy_all
+      account
+    end
+
     # A manual (unsynced) account with no entries, so counts stay exact.
     def create_manual_account
       @user.family.accounts.create!(

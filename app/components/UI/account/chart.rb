@@ -136,9 +136,32 @@ class UI::Account::Chart < ApplicationComponent
   end
 
   # Formatted main indicator. Gains are signed explicitly (e.g. "+€79.53") since
-  # a gain of zero-or-more is otherwise indistinguishable from a balance.
+  # a gain of zero-or-more is otherwise indistinguishable from a balance. An
+  # instrument account leads with its quantity; its money value is secondary.
   def view_balance_display
+    return instrument_quantity_display if instrument_account?
+
     signed_format(view_balance_money)
+  end
+
+  def instrument_account?
+    account.instrument_account?
+  end
+
+  def instrument_quantity_display
+    I18n.t(
+      "UI.account.chart.instrument_quantity",
+      quantity: Account::UnitBalance.format_quantity(account.unit_balance),
+      symbol: account.custom_instrument.symbol
+    )
+  end
+
+  # The quantity's money value, marked approximate because the instrument's
+  # price moves without the account's units changing.
+  def instrument_money_display
+    return nil unless instrument_account?
+
+    I18n.t("UI.account.chart.instrument_money", amount: account.balance_money.format)
   end
 
   # Formatted family-currency amount for foreign-currency accounts, signed the
@@ -149,6 +172,8 @@ class UI::Account::Chart < ApplicationComponent
 
   # Label displayed above the main indicator, based on account type and chart view.
   def title
+    return I18n.t("UI.account.chart.title.balance") if instrument_account?
+
     case account.accountable_type
     when "Investment", "Crypto"
       case view
@@ -195,6 +220,10 @@ class UI::Account::Chart < ApplicationComponent
   end
 
   def view
+    # An instrument account has one holding and no cash to break out, so its
+    # chart always plots the account's money value.
+    return "balance" if instrument_account?
+
     @view ||= "balance"
   end
 

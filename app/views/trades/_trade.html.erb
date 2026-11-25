@@ -78,9 +78,18 @@
           <% end %>
         <% end %>
 
-        <%= content_tag :p,
-                    format_money(-entry.amount_money),
-                    class: ["privacy-sensitive", "text-green-600": entry.amount.negative?] %>
+        <%# A unit movement in an instrument account moves no cash, so its
+            amount is always zero; the units are what changed. %>
+        <% if entry.amount.zero? && trade.internal_movement? && trade.security&.custom? %>
+          <%= content_tag :p,
+                      t("trades.trade.unit_change", sign: trade.qty.negative? ? "−" : "+",
+                        quantity: Account::UnitBalance.format_quantity(trade.qty.abs), symbol: trade.security.display_ticker),
+                      class: ["privacy-sensitive", "text-green-600": trade.qty.positive?] %>
+        <% else %>
+          <%= content_tag :p,
+                      format_money(-entry.amount_money),
+                      class: ["privacy-sensitive", "text-green-600": entry.amount.negative?] %>
+        <% end %>
       </div>
     </div>
   <% end %>

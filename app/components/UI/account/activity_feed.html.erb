@@ -9,30 +9,52 @@
         <%= render DS::Menu.new(variant: "button") do |menu| %>
           <% menu.with_button(text: t("accounts.show.activity.new"), variant: "secondary", icon: "plus") %>
 
-          <% unless account.linked? %>
+          <% if account.instrument_account? %>
+            <% symbol = account.custom_instrument.symbol %>
             <% menu.with_item(
                 variant: "link",
-                text: t("accounts.show.activity.new_balance"),
+                text: t("accounts.show.activity.update_balance"),
                 icon: "circle-dollar-sign",
-                href: new_valuation_path(account_id: account.id),
+                href: new_account_unit_balance_path(account, mode: "set"),
                 data: { turbo_frame: :modal }) %>
-          <% end %>
+            <% menu.with_item(
+                variant: "link",
+                text: t("accounts.show.activity.add_units", symbol: symbol),
+                icon: "plus",
+                href: new_account_unit_balance_path(account, mode: "add"),
+                data: { turbo_frame: :modal }) %>
+            <% menu.with_item(
+                variant: "link",
+                text: t("accounts.show.activity.remove_units", symbol: symbol),
+                icon: "minus",
+                href: new_account_unit_balance_path(account, mode: "remove"),
+                data: { turbo_frame: :modal }) %>
+          <% else %>
+            <% unless account.linked? %>
+              <% menu.with_item(
+                  variant: "link",
+                  text: t("accounts.show.activity.new_balance"),
+                  icon: "circle-dollar-sign",
+                  href: new_valuation_path(account_id: account.id),
+                  data: { turbo_frame: :modal }) %>
+            <% end %>
 
-          <% unless account.crypto? %>
-            <% if account.investment? %>
-              <% menu.with_item(
-                  variant: "link",
-                  text: t("accounts.show.activity.new_activity"),
-                  icon: "arrow-left-right",
-                  href: new_trade_path(account_id: account.id),
-                  data: { turbo_frame: :modal }) %>
-            <% else %>
-              <% menu.with_item(
-                  variant: "link",
-                  text: t("accounts.show.activity.new_transaction"),
-                  icon: "credit-card",
-                  href: new_transaction_path(account_id: account.id),
-                  data: { turbo_frame: :modal }) %>
+            <% unless account.crypto? %>
+              <% if account.investment? %>
+                <% menu.with_item(
+                    variant: "link",
+                    text: t("accounts.show.activity.new_activity"),
+                    icon: "arrow-left-right",
+                    href: new_trade_path(account_id: account.id),
+                    data: { turbo_frame: :modal }) %>
+              <% else %>
+                <% menu.with_item(
+                    variant: "link",
+                    text: t("accounts.show.activity.new_transaction"),
+                    icon: "credit-card",
+                    href: new_transaction_path(account_id: account.id),
+                    data: { turbo_frame: :modal }) %>
+              <% end %>
             <% end %>
           <% end %>
 

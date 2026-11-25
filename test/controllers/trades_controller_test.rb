@@ -902,6 +902,18 @@ class TradesControllerTest < ActionDispatch::IntegrationTest
     assert_select "span.text-secondary.text-sm", text: I18n.t("trades.header.transfer")
   end
 
+  test "an instrument account's trade form sends to its unit form" do
+    instrument = create_custom_instrument(family: @user.family, name: "Gram gold", symbol: "GRAU")
+    account = @user.family.accounts.create!(
+      owner: @user, name: "Gold units", currency: instrument.currency, balance: 0,
+      cash_balance: 0, accountable: Investment.new, custom_instrument: instrument
+    )
+
+    get new_trade_url(account_id: account.id)
+
+    assert_redirected_to new_account_unit_balance_path(account, mode: "add")
+  end
+
   private
     def lot_choice_account(method: "average")
       account = accounts(:investment)

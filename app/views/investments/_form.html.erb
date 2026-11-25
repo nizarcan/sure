@@ -1,6 +1,22 @@
 <%# locals: (account:, url:) %>
 
-<%= render "accounts/form", account: account, url: url do |form| %>
+<% instrument_options = account.new_record? && !account.linked? ? instrument_currency_options : nil %>
+<% submitted = params[:account].is_a?(ActionController::Parameters) ? params[:account] : {} %>
+
+<%= render "accounts/form", account: account, url: url, instrument_options: instrument_options do |form| %>
+  <% if account.new_record? %>
+    <div data-instrument-account-form-target="priceField" class="<%= "hidden" unless account.custom_instrument.present? %>">
+      <%= form.money_field :unit_price,
+          label: t("investments.form.price_paid_per_unit"),
+          currency_value_override: (account.custom_instrument&.currency || Current.family.currency),
+          hide_currency: true,
+          step: "any",
+          precision: 10,
+          value: submitted[:unit_price].presence&.to_d %>
+      <p class="mt-1 text-xs text-secondary"><%= t("investments.form.price_paid_per_unit_hint") %></p>
+    </div>
+  <% end %>
+
   <%= form.fields_for :accountable do |investment_form| %>
     <%= investment_form.select :subtype,
                        grouped_options_for_select(Investment.subtypes_grouped_for_select(currency: Current.family.currency), account.accountable.subtype),

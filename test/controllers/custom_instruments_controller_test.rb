@@ -376,38 +376,43 @@ class CustomInstrumentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal I18n.t("custom_instruments.add_units.archived"), flash[:alert]
   end
 
-  test "add units without an eligible account offers to create one" do
+  test "add units without an eligible account offers to create one on the instrument" do
     sign_in users(:family_member)
 
     get add_units_custom_instrument_url(@instrument)
 
     assert_response :success
     assert_includes response.body, I18n.t("custom_instruments.add_units.empty_title")
-    return_path = add_units_custom_instrument_path(@instrument, account_created: 1)
-    assert_select "a[href='#{new_investment_path(return_to: return_path)}']", text: I18n.t("custom_instruments.add_units.empty_action")
+    assert_select "a[href='#{new_investment_path(instrument: @instrument.id)}']",
+                  text: I18n.t("custom_instruments.add_units.empty_action")
   end
 
-  test "creating the offered account returns to adding units in it" do
+  test "creating the offered instrument account adds its units and opens the account" do
     member = users(:family_member)
     sign_in member
-    return_path = add_units_custom_instrument_path(@instrument, account_created: 1)
 
     post investments_url, params: { account: {
-      name: "Physical gold", balance: 0, currency: "USD", accountable_type: "Investment", return_to: return_path
+      name: "Physical gold", balance: 5, currency: "instrument:#{@instrument.id}",
+      accountable_type: "Investment"
     } }
-    assert_redirected_to return_path
 
     account = @family.accounts.find_by!(name: "Physical gold")
-    follow_redirect!
-    assert_redirected_to new_trade_path(
-      account_id: account.id, type: Trade::CreateForm::OPENING_TYPE, security: "#{@instrument.security.ticker}||custom"
-    )
+    assert_redirected_to account_path(account)
+    assert_equal @instrument, account.custom_instrument
+    assert_equal 5, account.unit_balance
   end
 
-  test "after an account is created with several to choose from, add units still asks which" do
-    get add_units_custom_instrument_url(@instrument, account_created: 1)
+  test "add units lists this instrument's accounts first and sends them to the unit form" do
+    account = @family.accounts.create!(
+      owner: @user, name: "Zebra gold", currency: "USD", balance: 0, cash_balance: 0,
+      accountable: Investment.new, custom_instrument: @instrument
+    )
+
+    get add_units_custom_instrument_url(@instrument)
 
     assert_response :success
+    first_link = css_select("turbo-frame#modal a").first
+    assert_equal new_account_unit_balance_path(account, mode: "add"), first_link["href"]
   end
 
   test "add units is unavailable to a guest" do

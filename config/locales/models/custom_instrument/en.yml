@@ -19,7 +19,10 @@ en:
         custom_instrument:
           attributes:
             base:
-              in_use: "This instrument is used by a trade, a holding or another instrument. Archive it instead."
+              in_use: "This instrument is used by a trade, a holding, an account or another instrument. Archive it instead."
+            currency:
+              held_by_accounts: "cannot change while %{count} accounts hold this instrument"
+              metal: "cannot be a metal. Use the currency of the account that holds it."
             formula:
               cycle: "This formula would create a cycle between instruments."
               nesting_too_deep: "Instruments cannot be nested more than 5 levels deep."

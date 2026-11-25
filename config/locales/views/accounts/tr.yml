@@ -37,6 +37,8 @@ tr:
       warning_title: Bunun anlamı
       warning_transactions_kept: Mevcut tüm işlemler ve bakiyeler korunacaktır
     create:
+      instrument_not_found: "Bu enstrüman kullanılamıyor. Başka bir tane seçin."
+      quantity_must_be_positive: "Kaç biriminiz olduğunu girin."
       success: "%{type} hesabı oluşturuldu"
     destroy:
       cannot_delete_linked: Bağlı bir hesap silinemez. Lütfen önce bağlantısını kesin.
@@ -49,6 +51,7 @@ tr:
     form:
       additional_details: Ek detaylar
       balance: Güncel bakiye
+      held_in: Elde tutulan
       enable_category_matcher_hint: Etkinleştirildiğinde, sağlayıcının önerdiği kategori
         içe aktarılan işlemlere uygulanır. Yeni işlemleri kategorisiz bırakmak için
         devre dışı bırakın.
@@ -122,6 +125,9 @@ tr:
         new_trade: Yeni alım satım
         new_transaction: Yeni işlem
         new_transfer: Yeni transfer
+        add_units: "%{symbol} ekle"
+        remove_units: "%{symbol} çıkar"
+        update_balance: Bakiyeyi güncelle
         no_entries: Kayıt bulunamadı
         pending: Beklemede
         search:
@@ -225,6 +231,21 @@ tr:
       success: Hesap bağlantısı başarıyla kesildi. Artık manuel bir hesap.
     update:
       success: "%{type} hesabı güncellendi"
+    unit_balance:
+      changed: "%{name} (%{change})"
+      display: "%{quantity} %{symbol}"
+      unchanged: "Bakiye zaten %{quantity} %{symbol}."
+      names:
+        add: "%{quantity} %{symbol} eklendi"
+        remove: "%{quantity} %{symbol} çıkarıldı"
+        set: "Bakiye %{quantity} %{symbol} olarak ayarlandı"
+      errors:
+        insufficient_units: "O tarihte yalnızca %{held} %{symbol} var; en fazla bu kadar çıkarabilirsiniz."
+        invalid_price: Ödenen fiyat negatif olamaz.
+        negative_quantity: Miktar negatif olamaz.
+        not_an_instrument_account: Bu hesap özel bir enstrüman tutmuyor.
+        not_instrument: Bu hesap özel bir enstrüman tutmuyor.
+        quantity_must_be_positive: Sıfırdan büyük bir miktar girin.
   email_confirmations:
     new:
       invalid_token: Geçersiz veya süresi dolmuş onay bağlantısı.

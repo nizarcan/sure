@@ -13,10 +13,15 @@ class Account < ApplicationRecord
   validate :cost_tag_in_family, if: -> { new_record? && property? && accountable&.cost_tag_id.present? }
   validates :name, :balance, :currency, presence: true
   validate :owner_belongs_to_family, if: -> { owner_id.present? && family_id.present? }
+  validate :instrument_account_is_an_investment, if: -> { custom_instrument_id.present? }
+  validate :custom_instrument_in_family, if: -> { custom_instrument_id.present? && family_id.present? }
+  validate :currency_matches_custom_instrument, if: -> { custom_instrument_id.present? && currency.present? }
+  validate :custom_instrument_is_immutable, if: -> { persisted? && will_save_change_to_custom_instrument_id? }
 
   belongs_to :family
   belongs_to :owner, class_name: "User", optional: true
   belongs_to :import, optional: true
+  belongs_to :custom_instrument, optional: true
 
   has_many :account_shares, dependent: :destroy
   has_many :shared_users, through: :account_shares, source: :user
@@ -75,6 +80,7 @@ class Account < ApplicationRecord
   def reload(*)
     @scheduled_entry_flows = nil
     @current_holdings_total = nil
+    @unit_balance = nil
     super
   end
 
@@ -739,6 +745,66 @@ class Account < ApplicationRecord
       simplefin_account_id.blank?
   end
 
+  # An account held in one of the family's custom instruments. Its balance is a
+  # quantity of that instrument, and its money value is the market value of the
+  # instrument's security, exactly like a holding.
+  def instrument_account?
+    custom_instrument_id.present?
+  end
+
+  def unit_balance
+    @unit_balance ||= unit_balance_on(Date.current)
+  end
+
+  # The units held on +date+, from this account's trades in the instrument's
+  # security. Trades dated after today are scheduled and left out, as a
+  # projected balance would.
+  def unit_balance_on(date)
+    return BigDecimal(0) unless instrument_account?
+
+    effective_date = [ date, Date.current ].min
+    trades.joins(:entry)
+          .where(security_id: custom_instrument.security_id)
+          .where(entries: { date: ..effective_date })
+          .sum(:qty)
+          .to_d
+  end
+
+  def unit_balance_display
+    return nil unless instrument_account?
+
+    I18n.t(
+      "accounts.unit_balance.display",
+      quantity: Account::UnitBalance.format_quantity(unit_balance),
+      symbol: custom_instrument.symbol
+    )
+  end
+
+  # Fills #unit_balance for a collection with one grouped query, so an accounts
+  # list or sidebar does not run one sum per instrument account. Accepts either
+  # accounts or balance-sheet rows that delegate to one.
+  def self.preload_unit_balances(accounts)
+    records = accounts.filter_map do |account|
+      account.is_a?(Account) ? account : (account.account if account.respond_to?(:account))
+    end
+    held = records.select(&:instrument_account?)
+    return accounts if held.empty?
+
+    securities = held.to_h { |account| [ account.id, account.custom_instrument.security_id ] }
+    totals = Trade.joins(:entry)
+      .where(entries: { account_id: securities.keys, date: ..Date.current })
+      .group("entries.account_id", :security_id)
+      .sum(:qty)
+    held.each do |account|
+      account.preload_unit_balance(totals[[ account.id, securities[account.id] ]].to_d)
+    end
+    accounts
+  end
+
+  def preload_unit_balance(value)
+    @unit_balance = value.to_d
+  end
+
   # Default GoalPledge kind for this account. Manual accounts get
   # `manual_save` (resolves on the next valuation), live-synced accounts
   # get `transfer` (resolves when the synced deposit posts). Keeps the
@@ -1119,6 +1185,26 @@ class Account < ApplicationRecord
       return if family && accountable.cost_tag_in?(family)
 
       errors.add(:base, :cost_tag_other_family)
+    end
+
+    def instrument_account_is_an_investment
+      errors.add(:custom_instrument, :not_an_investment) unless accountable_type == "Investment"
+    end
+
+    def custom_instrument_in_family
+      return if custom_instrument&.family_id == family_id
+
+      errors.add(:custom_instrument, :other_family)
+    end
+
+    def currency_matches_custom_instrument
+      return if custom_instrument.nil? || currency == custom_instrument.currency
+
+      errors.add(:currency, :instrument_currency, currency: custom_instrument.currency)
+    end
+
+    def custom_instrument_is_immutable
+      errors.add(:custom_instrument, :immutable)
     end
 
     # AASM transition callbacks run after the timestamp is set and before the

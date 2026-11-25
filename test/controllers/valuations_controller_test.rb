@@ -2,6 +2,7 @@ require "test_helper"
 
 class ValuationsControllerTest < ActionDispatch::IntegrationTest
   include EntryableResourceInterfaceTest
+  include CustomInstrumentTestHelper
 
   setup do
     sign_in @user = users(:family_admin)
@@ -131,5 +132,24 @@ class ValuationsControllerTest < ActionDispatch::IntegrationTest
     @entry.reload
     assert_equal 22000, @entry.amount
     assert_equal "Keep me", @entry.notes
+  end
+
+  test "an instrument account is sent to its unit form instead of a valuation" do
+    instrument = create_custom_instrument(family: @user.family, name: "Gram gold", symbol: "GRAU")
+    account = @user.family.accounts.create!(
+      owner: @user, name: "Gold units", currency: instrument.currency, balance: 0,
+      cash_balance: 0, accountable: Investment.new, custom_instrument: instrument
+    )
+    path = new_account_unit_balance_path(account, mode: "set")
+
+    get new_valuation_url(account_id: account.id)
+    assert_redirected_to path
+    assert_equal I18n.t("valuations.errors.instrument_account"), flash[:alert]
+
+    assert_no_difference [ "Entry.count", "Valuation.count" ] do
+      post valuations_url, params: { entry: { amount: 100, date: Date.current, account_id: account.id } }
+    end
+    assert_redirected_to path
+    assert_equal I18n.t("valuations.errors.instrument_account"), flash[:alert]
   end
 end

@@ -297,4 +297,54 @@ class Trade::CreateFormTest < ActiveSupport::TestCase
     assert_not_includes Trade::CreateForm::SUPPORTED_TYPES, Trade::CreateForm::OPENING_TYPE
     assert_not_includes Trade::CreateForm::ACTIVITY_LABELS.values, Trade::TRANSFER_LABEL
   end
+
+  test "an instrument account refuses a trade in another security" do
+    account = instrument_account
+    other = securities(:msft)
+
+    entry = Trade::CreateForm.new(
+      account: account,
+      type: "buy",
+      date: Date.current,
+      qty: 1,
+      price: 10,
+      currency: "USD",
+      ticker: other.to_combobox_option.id
+    ).create
+
+    assert_not entry.persisted?
+    assert_includes entry.errors[:base], I18n.t("trades.form.instrument_account_security")
+  end
+
+  test "an instrument account accepts units of its own instrument" do
+    account = instrument_account
+
+    entry = Trade::CreateForm.new(
+      account: account,
+      type: Trade::CreateForm::OPENING_TYPE,
+      date: Date.current,
+      qty: 5,
+      currency: "USD",
+      ticker: account.custom_instrument.security.to_combobox_option.id
+    ).create
+
+    assert entry.persisted?, entry.errors.full_messages.to_sentence
+    assert_equal account.custom_instrument.security, entry.trade.security
+    assert_equal 5, entry.trade.qty
+  end
+
+  private
+    def instrument_account
+      instrument = create_custom_instrument(family: @account.family, symbol: "UNITACC", currency: "USD")
+
+      @account.family.accounts.create!(
+        owner: users(:family_admin),
+        name: "Gold units",
+        currency: instrument.currency,
+        balance: 0,
+        cash_balance: 0,
+        accountable: Investment.new,
+        custom_instrument: instrument
+      )
+    end
 end

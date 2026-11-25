@@ -25,8 +25,11 @@ en:
     money_field:
       above_max: Enter an amount of at most %{max}.
       below_min: Enter an amount of at least %{min}.
+      currencies_group: Currencies
+      instruments_group: Your instruments
       invalid_amount: Enter a valid amount or expression.
       label: Amount
+      quantity: Quantity
       operator_add: Add
       operator_subtract: Subtract
       operator_multiply: Multiply

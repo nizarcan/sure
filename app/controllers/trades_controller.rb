@@ -6,6 +6,11 @@ class TradesController < ApplicationController
   # Defaults to a buy trade
   def new
     @account = accessible_accounts.find_by(id: params[:account_id])
+    if @account&.instrument_account?
+      redirect_to new_account_unit_balance_path(@account, mode: "add")
+      return
+    end
+
     @model = Current.family.entries.new(
       account: @account,
       currency: @account ? @account.currency : Current.family.currency,

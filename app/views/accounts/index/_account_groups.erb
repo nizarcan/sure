@@ -6,12 +6,14 @@
        associations: [
          :account_shares,
          :accountable,
+         :custom_instrument,
          :plaid_account,
          :simplefin_account,
          { account_providers: :provider },
          { logo_attachment: :blob }
        ]
      ).call %>
+  <% Account.preload_unit_balances(accounts) %>
 <% end %>
 <% accounts.group_by(&:accountable_type).sort_by { |group, _| group }.each do |group, accounts| %>
   <div class="bg-container-inset p-1 rounded-xl">

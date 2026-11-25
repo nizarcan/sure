@@ -36,6 +36,12 @@ en:
       models:
         account:
           attributes:
+            currency:
+              instrument_currency: "must be %{currency}, the instrument's currency"
+            custom_instrument:
+              immutable: cannot be changed after the account is created
+              not_an_investment: can only be held by an investment account
+              other_family: must belong to your family
             logo:
               invalid_content_type: must be a PNG, JPEG, GIF, WebP or ICO image
               too_large: must be smaller than %{max_size} MB

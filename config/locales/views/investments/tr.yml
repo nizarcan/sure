@@ -5,6 +5,8 @@ tr:
       edit: "%{account} hesabını düzenle"
     form:
       none: Yok
+      price_paid_per_unit: Birim başına ödenen fiyat
+      price_paid_per_unit_hint: İsteğe bağlı. Başlangıç birimlerinizin maliyeti olarak kullanılır.
       subtype_prompt: Yatırım türünü seçin
     new:
       title: Hesap bakiyesini girin

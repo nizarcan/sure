@@ -45,6 +45,7 @@ en:
       entry_updated: Entry updated
     errors:
       amount_required: Amount is required
+      instrument_account: This account is valued by its units. Update its balance instead.
     form:
       amount: Amount
       submit: Add balance update

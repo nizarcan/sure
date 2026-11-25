@@ -113,26 +113,96 @@ class CustomInstrumentsTest < ApplicationSystemTestCase
     shot "13-mobile-edit"
   end
 
-  test "creates the missing account from add units and comes back to add them" do
+  test "creates the missing instrument account from add units with its first units" do
     @family.accounts.where(accountable_type: %w[Investment Crypto]).find_each(&:destroy!)
     instrument = @family.custom_instruments.create!(name: "Gram gold", symbol: "GRAU", currency: "TRY", formula: "XAU / 31.1034768")
 
     visit custom_instruments_path
     find("a[href='#{add_units_custom_instrument_path(instrument)}']", match: :first, visible: :all).tap { |link| visit link[:href] }
     click_link "New investment account"
+
     within "dialog" do
+      assert_equal "instrument:#{instrument.id}", find("select[name='account[currency]']").value
       fill_in "Account name", with: "Gold coins"
-      fill_in "account[balance]", with: "0"
+      fill_in "Quantity", with: "5"
       click_button "Create Account"
     end
 
-    assert_text "Add units already owned"
-    assert_equal "GRAU - Gram gold", find("input[role='combobox']").value
-    shot "15-back-to-add-units"
-    fill_in "Quantity", with: "5"
-    click_button "Add transaction"
-    assert_text "Entry created"
-    assert_equal 5, @family.accounts.find_by!(name: "Gold coins").trades.sole.qty
+    assert_text "Gold coins"
+    account = @family.accounts.find_by!(name: "Gold coins")
+    assert_equal instrument, account.custom_instrument
+    assert_equal 5, account.unit_balance
+    assert_text "5 GRAU"
+    shot "15-instrument-account"
+  end
+
+  test "creates an instrument account from the currency picker and changes its units" do
+    instrument = @family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "TRY", formula: "XAU / 31.1034768"
+    )
+    (30.days.ago.to_date..Date.current).each do |date|
+      instrument.security.prices.create!(date: date, price: 2500, currency: "TRY")
+    end
+
+    visit new_investment_path
+    find("select[name='account[currency]']").select("Gram gold (GRAU)")
+    assert_field "Quantity"
+    shot "16-instrument-form"
+
+    fill_in "Account name", with: "Gold units"
+    fill_in "Quantity", with: "200"
+    # A native date input's segments are locale-ordered, so typing an ISO
+    # string pads the day field. Set the value the browser submits directly.
+    page.execute_script(
+      "document.querySelector(\"input[name='account[opening_balance_date]']\").value = arguments[0]",
+      30.days.ago.to_date.iso8601
+    )
+    fill_in "Price paid per unit", with: "5"
+    shot "17-instrument-filled"
+    click_button "Create Account"
+
+    assert_text "Gold units"
+    account = @family.accounts.find_by!(name: "Gold units")
+    assert_equal instrument, account.custom_instrument
+    assert_equal 200, account.unit_balance
+    assert_text "200 GRAU"
+    shot "18-instrument-account"
+
+    Account::Syncer.new(account).send(:materialize_balances)
+    account.reload
+    assert_equal 0, account.cash_balance.to_d
+    assert_equal BigDecimal("500000"), account.balance.to_d
+    visit account_path(account)
+    assert_text "200 GRAU"
+    shot "19-instrument-valued"
+
+    change_units("Update balance", "Update balance", "250")
+    assert_text "Balance set to 250 GRAU"
+    assert_text "250 GRAU"
+    shot "20-instrument-updated"
+
+    change_units("Remove GRAU", "Remove units", "30")
+    assert_text "Removed 30 GRAU"
+    assert_text "−30 GRAU"
+    assert_text "+200 GRAU"
+    assert_text "220 GRAU"
+
+    Account::Syncer.new(account.reload).send(:materialize_balances)
+    account.reload
+    assert_equal 0, account.cash_balance.to_d
+    assert_equal BigDecimal("550000"), account.balance.to_d
+
+    holding = account.holdings.find_by!(security: instrument.security, date: Date.current)
+    assert_equal 220, holding.qty
+    assert_in_delta 550_000, holding.amount, 0.01
+
+    visit account_path(account)
+    assert_text "220 GRAU"
+    shot "21-instrument-removed"
+
+    visit account_path(account, tab: "holdings")
+    assert_text "220 GRAU"
+    shot "22-instrument-holdings"
   end
 
   test "offers instruments in the trade form before anything is typed" do
@@ -145,6 +215,19 @@ class CustomInstrumentsTest < ApplicationSystemTestCase
   end
 
   private
+    def change_units(menu_label, submit_label, quantity)
+      within "[data-testid='activity-menu']" do
+        click_button "New"
+      end
+      click_link menu_label
+
+      within "dialog" do
+        shot "unit-form-#{menu_label.parameterize}"
+        fill_in "Quantity", with: quantity
+        click_button submit_label
+      end
+    end
+
     # Set SCREENSHOTS=/some/dir to keep a visual record of the walkthrough.
     def shot(name)
       return if ENV["SCREENSHOTS"].blank?

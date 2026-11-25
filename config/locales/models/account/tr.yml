@@ -22,6 +22,16 @@ tr:
         family_id: "%{moniker}"
         name: Ad
         subtype: Alt Tür
+    errors:
+      models:
+        account:
+          attributes:
+            currency:
+              instrument_currency: "%{currency} olmalı; enstrümanın para birimi budur"
+            custom_instrument:
+              immutable: hesap oluşturulduktan sonra değiştirilemez
+              not_an_investment: yalnızca bir yatırım hesabında tutulabilir
+              other_family: ailenize ait olmalı
     models:
       account: Hesap
       account/credit: Kredi Kartı

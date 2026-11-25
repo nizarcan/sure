@@ -9,6 +9,26 @@ module AccountsHelper
     sync_account_path(account)
   end
 
+  # The investment form's "Your instruments" currency group. The value names the
+  # instrument, and the data lets the Stimulus controller turn the amount field
+  # into a quantity field without another request.
+  def instrument_currency_options(family = Current.family)
+    return [] unless family
+
+    family.custom_instruments.active.alphabetically.map do |instrument|
+      currency = Money::Currency.new(instrument.currency)
+      [
+        "#{instrument.name} (#{instrument.symbol})",
+        "instrument:#{instrument.id}",
+        { data: {
+          instrument_symbol: instrument.symbol,
+          instrument_currency: instrument.currency,
+          instrument_currency_symbol: currency.symbol
+        } }
+      ]
+    end
+  end
+
   # How long a sidebar sparkline frame may spend fetching before
   # `turbo_frame_timeout_controller` replaces it with a warning badge.
   SPARKLINE_FRAME_TIMEOUT_MS = 10_000

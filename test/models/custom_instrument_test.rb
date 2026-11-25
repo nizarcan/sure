@@ -409,4 +409,40 @@ class CustomInstrumentTest < ActiveSupport::TestCase
     assert_equal BigDecimal("1000"), account.cash_balance.to_d
     assert_equal BigDecimal("1250"), account.balance.to_d
   end
+
+  test "an account held in the instrument keeps it in use" do
+    instrument = create_custom_instrument(family: @family, symbol: "HELDACC")
+    @family.accounts.create!(
+      owner: @user, name: "Gold units", currency: instrument.currency, balance: 0,
+      cash_balance: 0, accountable: Investment.new, custom_instrument: instrument
+    )
+
+    assert instrument.in_use?
+    assert_not instrument.destroy
+    assert_includes instrument.errors[:base],
+                    I18n.t("activerecord.errors.models.custom_instrument.attributes.base.in_use")
+    assert CustomInstrument.exists?(instrument.id)
+  end
+
+  test "the currency cannot change while an account holds the instrument" do
+    instrument = create_custom_instrument(family: @family, symbol: "HELDCUR")
+    @family.accounts.create!(
+      owner: @user, name: "Gold units", currency: instrument.currency, balance: 0,
+      cash_balance: 0, accountable: Investment.new, custom_instrument: instrument
+    )
+
+    assert_not instrument.update(currency: "EUR")
+    assert_includes instrument.errors[:currency],
+                    I18n.t("activerecord.errors.models.custom_instrument.attributes.currency.held_by_accounts", count: 1)
+  end
+
+  test "a metal cannot be the instrument's currency" do
+    instrument = @family.custom_instruments.new(
+      name: "Metal priced", symbol: "METALC", currency: "XAU", formula: "2 * USD"
+    )
+
+    assert_not instrument.valid?
+    assert_includes instrument.errors[:currency],
+                    I18n.t("activerecord.errors.models.custom_instrument.attributes.currency.metal")
+  end
 end

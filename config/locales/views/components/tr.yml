@@ -64,6 +64,8 @@ tr:
           start_principal: Bu günün başındaki anapara bakiyesi
           start_value: Bu günün başındaki varlık değeri
       chart:
+        instrument_money: "≈ %{amount}"
+        instrument_quantity: "%{quantity} %{symbol}"
         no_data_available: Veri bulunmuyor
         title:
           balance: Bakiye

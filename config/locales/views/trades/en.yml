@@ -30,9 +30,11 @@ en:
       dividend_requires_security: Security is required for dividends
       security_not_found: Could not find the selected security
       qty_must_be_positive: Enter how many units you own
+      instrument_account_security: This account holds only one instrument. Change its units from the account page.
       trade_requires_security: A security (ticker) is required for buy and sell trades
       transfer_in_hint: Cash does not change. You can set what you paid for these units later from the holding.
     trade:
+      unit_change: "%{sign}%{quantity} %{symbol}"
       scheduled: Scheduled
       scheduled_tooltip: Dated in the future — won't affect your balance until then
     header:

@@ -21,6 +21,7 @@ module AccountableResource
       currency: Current.family.currency,
       accountable: accountable_type.new
     )
+    apply_requested_instrument(@account)
   end
 
   def show
@@ -35,28 +36,23 @@ module AccountableResource
   end
 
   def create
-    opening_balance_date = begin
-      account_params[:opening_balance_date].presence&.to_date
-    rescue Date::Error
-      nil
-    end || (Time.zone.today - 2.years)
+    if instrument_selection_id
+      create_instrument_account
+      return
+    end
+
+    opening_balance_date = parsed_opening_balance_date
     Account.transaction do
       # A new account has no sales to restate, so it starts on the default method.
       @account = Current.family.accounts.create_and_sync(
-        account_params.except(:return_to, :opening_balance_date, :cost_basis_method).merge(owner: Current.user, logo_chosen: logo_chosen?),
+        account_params.except(:return_to, :opening_balance_date, :cost_basis_method, :unit_price).merge(owner: Current.user, logo_chosen: logo_chosen?),
         opening_balance_date: opening_balance_date
       )
       @account.lock_saved_attributes!
     end
     apply_logo_choice
 
-    # Prefer the form-carried return_to, then the session value StoreLocation
-    # captured from `?return_to=` (survives multi-step flows where the param
-    # isn't threaded), then the account page. The form param is sanitized here
-    # (the session value is already filtered at store time); the session is
-    # consumed with delete so a stale value can't leak into a later flow.
-    return_path = safe_return_to(account_params[:return_to]) || session.delete(:return_to).presence || @account
-    redirect_to return_path,
+    redirect_to create_return_path,
                 notice: t("accounts.create.success", type: accountable_type.name.underscore.humanize)
   rescue ActiveRecord::RecordInvalid => e
     # `create_and_sync` saves with `save!`. A validation the user can trip from
@@ -85,7 +81,7 @@ module AccountableResource
     # Assigning a balance can fail before the normal update path assigns the
     # other submitted fields. Keep them available for the 422 form without
     # persisting them.
-    update_params = account_params.except(:return_to, :balance, :opening_balance_date, :cost_basis_method)
+    update_params = account_params.except(:return_to, :balance, :opening_balance_date, :cost_basis_method, :unit_price)
     # Every account type posts through here; only one with trades has lots to
     # sell. Applied after the other fields, since the same form can change a
     # crypto account's subtype and with it whether the account trades.
@@ -165,6 +161,135 @@ module AccountableResource
       @account_updated.present?
     end
 
+    def parsed_opening_balance_date
+      begin
+        account_params[:opening_balance_date].presence&.to_date
+      rescue Date::Error
+        nil
+      end || (Time.zone.today - 2.years)
+    end
+
+    # The id an investment form's currency picker carries when the account is
+    # to be held in one of the family's custom instruments. Another account
+    # type that submits one is refused by Account's own validation rather than
+    # falling through with a currency code the app cannot format.
+    def instrument_selection_id
+      value = account_params[:currency].to_s
+      value.delete_prefix("instrument:") if value.start_with?("instrument:")
+    end
+
+    # Only the investment form offers instruments, and only for a new manual
+    # account, so the picker starts on the requested instrument.
+    def apply_requested_instrument(account)
+      return unless accountable_type == Investment
+      return if params[:instrument].blank?
+
+      instrument = Current.family.custom_instruments.active.find_by(id: params[:instrument])
+      return unless instrument
+
+      account.custom_instrument = instrument
+      account.currency = "instrument:#{instrument.id}"
+    end
+
+    # The instrument account starts empty, anchored at zero on the opening
+    # date, and the entered quantity is then booked as its first units. Both
+    # commit together, so an invalid quantity leaves no account behind.
+    def create_instrument_account
+      instrument = Current.family.custom_instruments.active.find_by(id: instrument_selection_id)
+      return render_instrument_form_error(rebuilt_instrument_account, t("accounts.create.instrument_not_found")) unless instrument
+
+      quantity = account_params[:balance].to_d
+      if quantity <= 0
+        return render_instrument_form_error(
+          rebuilt_instrument_account(instrument, quantity: account_params[:balance]),
+          t("accounts.create.quantity_must_be_positive")
+        )
+      end
+
+      opening_balance_date = parsed_opening_balance_date
+      unit_price = account_params[:unit_price].presence&.to_d
+      created = false
+
+      Account.transaction do
+        # The zero anchor sits the day before the units. On the units' own date
+        # the balance calculator would read the holding as a negative cash
+        # position, because it derives cash as the anchor total minus holdings;
+        # a day earlier there is nothing to subtract, so cash starts at zero and
+        # the units alone carry the account's value.
+        @account = Current.family.accounts.create_and_sync(
+          instrument_account_attributes(instrument),
+          opening_balance_date: opening_balance_date - 1.day
+        )
+        result = Account::UnitBalance.new(@account).add(
+          quantity: quantity,
+          date: opening_balance_date,
+          unit_price: unit_price
+        )
+        unless result.success?
+          @error_message = result.message
+          raise ActiveRecord::Rollback
+        end
+        @account.lock_saved_attributes!
+        created = true
+      end
+
+      unless created
+        return render_instrument_form_error(
+          rebuilt_instrument_account(instrument, quantity: account_params[:balance]),
+          @error_message
+        )
+      end
+
+      apply_logo_choice
+      redirect_to create_return_path,
+                  notice: t("accounts.create.success", type: accountable_type.name.underscore.humanize)
+    rescue ActiveRecord::RecordInvalid => e
+      render_instrument_form_error(
+        rebuilt_instrument_account(instrument, quantity: account_params[:balance]),
+        e.record.errors.full_messages.join(", ").presence || e.message
+      )
+    end
+
+    def instrument_account_attributes(instrument)
+      account_params
+        .except(:return_to, :opening_balance_date, :cost_basis_method, :balance, :currency, :unit_price)
+        .merge(
+          owner: Current.user,
+          logo_chosen: logo_chosen?,
+          currency: instrument.currency,
+          custom_instrument: instrument,
+          balance: 0,
+          cash_balance: 0
+        )
+    end
+
+    # The form the 422 renders, still on the chosen instrument and holding the
+    # quantity the user typed. `currency` carries the picker's own value so the
+    # instrument stays selected; the model resolves it from `custom_instrument`.
+    def rebuilt_instrument_account(instrument = nil, quantity: account_params[:balance])
+      attributes = account_params.except(:return_to, :opening_balance_date, :cost_basis_method, :unit_price)
+      attributes[:currency] = "instrument:#{instrument.id}" if instrument
+      attributes[:balance] = quantity
+      attributes[:accountable_attributes] ||= {}
+      Current.family.accounts.build(attributes.merge(custom_instrument: instrument))
+    end
+
+    def render_instrument_form_error(account, message)
+      @account = account
+      @error_message = message
+      set_link_options
+      render :new, status: :unprocessable_entity
+    end
+
+    # Prefer the form-carried return_to, then the session value StoreLocation
+    # captured from `?return_to=` (survives multi-step flows where the param
+    # isn't threaded), then the account page. The form param is sanitized here
+    # (the session value is already filtered at store time); the session is
+    # consumed with delete so a stale value can't leak into a later flow.
+    def create_return_path
+      safe_return_to(account_params[:return_to]) || session.delete(:return_to).presence || @account
+    end
+
     def logo_choice
       params.dig(:account, :logo_choice).presence
     end
@@ -197,7 +322,7 @@ module AccountableResource
     # `accountable`, and the form came back without any of the type's own
     # inputs, which is the opposite of what this rescue exists to do.
     def rebuilt_account_from_submission
-      attributes = account_params.except(:return_to, :opening_balance_date)
+      attributes = account_params.except(:return_to, :opening_balance_date, :unit_price)
       attributes[:accountable_attributes] ||= {}
       Current.family.accounts.build(attributes)
     end
@@ -230,7 +355,7 @@ module AccountableResource
         :name, :balance, :subtype, :currency, :accountable_type, :return_to,
         :opening_balance_date,
         :institution_name, :institution_domain, :notes, :exclude_from_reports,
-        :enable_category_matcher, :cost_basis_method, :logo,
+        :enable_category_matcher, :cost_basis_method, :logo, :unit_price,
         accountable_attributes: self.class.permitted_accountable_attributes
       )
     end

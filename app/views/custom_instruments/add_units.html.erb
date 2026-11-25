@@ -7,15 +7,16 @@
 
         <ul class="divide-y divide-subdued overflow-hidden rounded-lg bg-container-inset">
           <% @accounts.each do |account| %>
+            <% href = if account.custom_instrument_id == @instrument.id
+                 new_account_unit_balance_path(account, mode: "add")
+               else
+                 new_trade_path(account_id: account.id, type: "transfer_in", security: "#{@instrument.security.ticker}||custom")
+               end %>
             <li>
               <%= render DS::Link.new(
                     text: account.name,
                     variant: "ghost",
-                    href: new_trade_path(
-                      account_id: account.id,
-                      type: "transfer_in",
-                      security: "#{@instrument.security.ticker}||custom"
-                    ),
+                    href: href,
                     icon: "plus",
                     icon_position: :right,
                     frame: :modal,
@@ -35,7 +36,7 @@
           <%= render DS::Link.new(
                 text: t(".empty_action"),
                 variant: "primary",
-                href: new_investment_path(return_to: add_units_custom_instrument_path(@instrument, account_created: 1)),
+                href: new_investment_path(instrument: @instrument.id),
                 icon: "plus",
                 frame: :modal
               ) %>

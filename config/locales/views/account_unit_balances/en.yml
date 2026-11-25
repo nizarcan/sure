@@ -1,0 +1,17 @@
+---
+en:
+  account_unit_balances:
+    new:
+      titles:
+        add: "Add %{symbol}"
+        remove: "Remove %{symbol}"
+        set: Update balance
+      quantity: "Quantity (%{symbol})"
+      current_quantity: "Currently %{quantity} %{symbol} on %{date}."
+      price_paid: Price paid per unit
+      price_paid_hint: Optional. Sets the cost of these units like a purchase, so a gain or loss can be shown.
+      cancel: Cancel
+      submit:
+        add: Add units
+        remove: Remove units
+        set: Update balance

@@ -19,6 +19,10 @@
       <div class="flex flex-row gap-2 items-baseline">
         <%= tag.p view_balance_display, class: "text-primary text-3xl font-medium truncate privacy-sensitive" %>
 
+        <% if instrument_money_display %>
+          <%= tag.p instrument_money_display, class: "text-sm font-medium text-secondary privacy-sensitive" %>
+        <% end %>
+
         <% if converted_balance_display %>
           <%= tag.p converted_balance_display, class: "text-sm font-medium text-secondary privacy-sensitive" %>
         <% end %>
@@ -26,7 +30,7 @@
     </div>
 
     <div class="flex items-center gap-2">
-      <% if account.supports_trades? %>
+      <% if account.supports_trades? && !instrument_account? %>
         <%= form_with url: account_path(account), method: :get, data: { controller: "auto-submit-form" } do |form| %>
           <% chart_view_hidden_fields.each do |name, value| %>
             <%= hidden_field_tag name, value, id: nil %>
