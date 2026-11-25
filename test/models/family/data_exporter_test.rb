@@ -1,6 +1,8 @@
 require "test_helper"
 
 class Family::DataExporterTest < ActiveSupport::TestCase
+  include CustomInstrumentTestHelper
+
   setup do
     @family = families(:dylan_family)
     @other_family = families(:empty)
@@ -1661,6 +1663,67 @@ class Family::DataExporterTest < ActiveSupport::TestCase
       assert_equal name, data["name"]
       assert_equal notes, data["notes"]
     end
+  end
+
+  test "exports custom instruments before the trades and holdings that use them" do
+    family = Family.create!(name: "Custom Export Family", currency: "USD", locale: "en", date_format: "%Y-%m-%d")
+    base = create_custom_instrument(family: family, name: "Gram gold", symbol: "GRAU", formula: "2 * USD")
+    nested = create_custom_instrument(family: family, name: "Double gram", symbol: "DGRAU", formula: "2 * GRAU")
+    archived = create_custom_instrument(family: family, name: "Old gram", symbol: "OLDG", formula: "3 * USD")
+    archived.archive!
+    account = family.accounts.create!(name: "Custom Brokerage", accountable: Investment.new, balance: 0, currency: "USD")
+    account.entries.create!(
+      date: Date.current, name: "Buy DGRAU", amount: 100, currency: "USD",
+      entryable: Trade.new(security: nested.security, qty: 2, price: 50, currency: "USD")
+    )
+    account.entries.create!(
+      date: Date.current, name: "Buy GRAU", amount: 10, currency: "USD",
+      entryable: Trade.new(security: base.security, qty: 1, price: 10, currency: "USD")
+    )
+    account.holdings.create!(
+      security: nested.security, date: Date.current, qty: 2, price: 50, amount: 100, currency: "USD"
+    )
+
+    Zip::File.open_buffer(Family::DataExporter.new(family).generate_export) do |zip|
+      records = zip.read("all.ndjson").each_line.map { |line| JSON.parse(line) }
+      instrument_records = records.select { |record| record["type"] == "CustomInstrument" }
+      symbols = instrument_records.map { |record| record.dig("data", "symbol") }
+
+      assert_equal %w[GRAU OLDG DGRAU], symbols, "a component is exported before the formula that names it"
+      assert_operator symbols.index("GRAU"), :<, symbols.index("DGRAU")
+
+      grau = instrument_records.find { |record| record.dig("data", "symbol") == "GRAU" }["data"]
+      assert_equal base.id, grau["id"]
+      assert_equal base.security_id, grau["security_id"]
+      assert_equal "Gram gold", grau["name"]
+      assert_equal "2 * USD", grau["formula"]
+      assert_equal "USD", grau["currency"]
+      assert_nil grau["archived_at"]
+
+      archived_data = instrument_records.find { |record| record.dig("data", "symbol") == "OLDG" }["data"]
+      assert_equal archived.archived_at.iso8601, Time.zone.parse(archived_data["archived_at"]).iso8601
+
+      instrument_index = records.index { |record| record["type"] == "CustomInstrument" }
+      first_security_user_index = records.index { |record| %w[Trade Holding Transaction].include?(record["type"]) }
+      assert_operator instrument_index, :<, first_security_user_index
+
+      trade = records.find { |record| record["type"] == "Trade" && record.dig("data", "ticker") == "DGRAU" }["data"]
+      assert_equal "DGRAU", trade["ticker"]
+      assert_equal nested.id, trade["custom_instrument_id"]
+      assert_equal nested.security_id, trade["security_id"]
+
+      holding = records.find { |record| record["type"] == "Holding" }["data"]
+      assert_equal "DGRAU", holding["ticker"]
+      assert_equal nested.id, holding["custom_instrument_id"]
+
+      trades_csv = CSV.parse(zip.read("trades.csv"), headers: true)
+      assert_equal %w[DGRAU GRAU], trades_csv.map { |row| row["ticker"] }.sort
+    end
+
+    # The displayed ticker of a custom security lives on its instrument, so a
+    # family with several custom trades must not query per trade.
+    queries = capture_sql_queries { Family::DataExporter.new(family).send(:generate_trades_csv) }
+    assert_equal 1, queries.count { |sql| sql.include?('FROM "custom_instruments"') }
   end
 
   private

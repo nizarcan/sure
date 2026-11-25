@@ -21,7 +21,9 @@ class Security < ApplicationRecord
     "BE" => "XBER", "DU" => "XDUS", "HM" => "XHAM", "HA" => "XHAN", "MU" => "XMUN", "STU" => "XSTU"
   }.freeze
 
-  KINDS = %w[standard cash].freeze
+  KINDS = %w[standard cash custom].freeze
+
+  CUSTOM_TICKER_PREFIX = /\ACUSTOM-/i
 
   # Known securities provider keys — derived from the registry so adding a new
   # provider to Registry#available_providers automatically allows it here.
@@ -95,6 +97,7 @@ class Security < ApplicationRecord
   has_many :trades, dependent: :nullify, class_name: "Trade"
   has_many :prices, dependent: :destroy
   has_many :splits, dependent: :destroy
+  has_one :custom_instrument
   # A security row is shared by every family that holds the instrument, but a
   # Tag belongs to one family, so a tagging is reachable only through its
   # owning family's tags. Read one family's with #tags_for and write them with
@@ -138,6 +141,35 @@ class Security < ApplicationRecord
 
   def cash?
     kind == "cash"
+  end
+
+  def custom?
+    kind == "custom"
+  end
+
+  def self.custom_ticker?(value)
+    value.to_s.match?(CUSTOM_TICKER_PREFIX)
+  end
+
+  # The symbol the user sees. A custom instrument stores a globally unique
+  # CUSTOM-<uuid> ticker so no other family's sync can adopt it; its symbol
+  # lives on the instrument.
+  def display_ticker
+    return ticker unless custom?
+
+    custom_instrument&.symbol || ticker
+  end
+
+  # Returns the family's own custom security for a combobox id such as
+  # "CUSTOM-...||custom". Another family's id resolves to nil, and anything
+  # else says :not_custom so the caller can fall back to the ordinary lookup.
+  def self.for_combobox(value, family:)
+    return :not_custom unless custom_ticker?(value)
+
+    ticker = value.to_s.split("|", 2).first
+    joins(:custom_instrument)
+      .where(kind: "custom", custom_instruments: { family_id: family.id })
+      .find_by("UPPER(securities.ticker) = ?", ticker.upcase)
   end
 
   # `family`'s tags on this security, and no other family's.
@@ -232,6 +264,8 @@ class Security < ApplicationRecord
   # A stored Brandfetch logo_url is rewritten to the current size and client
   # id, since holdings and the API render this value without transforming it.
   def display_logo_url
+    return nil if custom?
+
     if crypto?
       self.class.brandfetch_crypto_url(crypto_base_asset).presence || stored_logo_url
     elsif website_url.present?
@@ -273,7 +307,7 @@ class Security < ApplicationRecord
   def self.find_by_ticker_and_exchange(ticker:, exchange_operating_mic: nil, country_code: nil, match_blank_mic: false)
     return nil if ticker.blank?
 
-    scope = where("UPPER(ticker) = ?", ticker.to_s.upcase)
+    scope = where("UPPER(ticker) = ?", ticker.to_s.upcase).where.not(kind: "custom")
 
     if exchange_operating_mic.present?
       mics = exchange_operating_mic_lookup_values(exchange_operating_mic)
@@ -346,16 +380,30 @@ class Security < ApplicationRecord
   end
 
   def to_combobox_option
-    ComboboxOption.new(
-      symbol: ticker,
-      name: name,
-      logo_url: logo_url,
-      exchange_operating_mic: exchange_operating_mic,
-      country_code: country_code,
-      price_provider: price_provider,
-      currency: search_currency,
-      isin: search_isin
-    )
+    if custom?
+      ComboboxOption.new(
+        symbol: display_ticker,
+        ticker: ticker,
+        custom: true,
+        formula: custom_instrument&.formula,
+        name: name,
+        exchange_operating_mic: exchange_operating_mic,
+        country_code: country_code,
+        price_provider: "custom",
+        currency: custom_instrument&.currency
+      )
+    else
+      ComboboxOption.new(
+        symbol: ticker,
+        name: name,
+        logo_url: logo_url,
+        exchange_operating_mic: exchange_operating_mic,
+        country_code: country_code,
+        price_provider: price_provider,
+        currency: search_currency,
+        isin: search_isin
+      )
+    end
   end
 
   def brandfetch_icon_url(width: nil, height: nil)
@@ -390,7 +438,7 @@ class Security < ApplicationRecord
     end
 
     def should_generate_logo?
-      return false if cash?
+      return false if cash? || custom?
       return false unless Setting.brand_fetch_client_id.present?
 
       return true if logo_url.blank?

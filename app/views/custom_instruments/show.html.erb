@@ -1,0 +1,151 @@
+<%= render DS::Dialog.new(variant: :drawer) do |dialog| %>
+  <% dialog.with_header(custom_header: true) do %>
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex min-w-0 items-center gap-3">
+        <%= render DS::FilledIcon.new(
+              variant: :text,
+              text: @instrument.symbol,
+              description: @instrument.symbol,
+              text_length: 2,
+              rounded: true
+            ) %>
+
+        <div class="min-w-0">
+          <h2 id="<%= dialog.title_id %>" class="truncate text-lg font-medium text-primary">
+            <%= @instrument.name %>
+          </h2>
+          <p class="text-sm text-secondary">
+            <%= @instrument.symbol %>
+            <span class="text-subdued">&middot;</span>
+            <%= @instrument.currency %>
+            <% if @instrument.archived? %>
+              <span class="text-subdued">&middot;</span>
+              <%= t(".archived") %>
+            <% end %>
+          </p>
+        </div>
+      </div>
+
+      <%= dialog.close_button %>
+    </div>
+  <% end %>
+
+  <% dialog.with_body do %>
+    <div class="space-y-6">
+      <% unless Current.user&.guest? %>
+        <div class="flex flex-wrap gap-2">
+          <%= render DS::Button.new(
+                text: t(".refresh"),
+                variant: :secondary,
+                icon: "refresh-cw",
+                href: refresh_custom_instrument_path(@instrument),
+                method: :post,
+                form: { data: { turbo_frame: "_top" } }
+              ) %>
+
+          <%= render DS::Link.new(
+                text: t(".edit"),
+                variant: :secondary,
+                icon: "pencil",
+                href: edit_custom_instrument_path(@instrument),
+                frame: :modal
+              ) %>
+
+          <% unless @instrument.archived? %>
+            <%= render DS::Link.new(
+                  text: t(".add_units"),
+                  variant: :secondary,
+                  icon: "plus",
+                  href: add_units_custom_instrument_path(@instrument),
+                  frame: :modal
+                ) %>
+          <% end %>
+        </div>
+      <% end %>
+
+      <% if @instrument.description.present? %>
+        <p class="text-sm text-secondary"><%= @instrument.description %></p>
+      <% end %>
+
+      <%= render "custom_instruments/status_alerts",
+            instrument: @instrument,
+            status: @status,
+            stale_components: @stale_components %>
+
+      <% quote_price = @quote&.price && Money.new(@quote.price, @quote.currency) %>
+      <% price = quote_price || custom_instrument_price_money(@instrument.latest_price) %>
+      <section class="space-y-1">
+        <% if price %>
+          <p class="text-2xl font-medium text-primary privacy-sensitive"><%= format_money(price) %></p>
+        <% else %>
+          <p class="text-sm text-secondary"><%= t(".no_price") %></p>
+        <% end %>
+
+        <% as_of = @quote&.as_of || @instrument.latest_price&.date %>
+        <% if as_of %>
+          <p class="text-xs text-secondary"><%= t(".as_of", date: format_date(as_of)) %></p>
+        <% end %>
+      </section>
+
+      <section class="space-y-2">
+        <h3 class="text-sm font-medium text-secondary"><%= t(".chart_title") %></h3>
+        <% if @series %>
+          <div id="<%= dom_id(@instrument, :price_chart) %>"
+               class="h-40 w-full privacy-sensitive"
+               data-controller="time-series-chart"
+               data-time-series-chart-data-value="<%= @series.to_json %>"></div>
+        <% else %>
+          <p class="text-sm text-secondary"><%= t(".chart_empty") %></p>
+        <% end %>
+      </section>
+
+      <section class="space-y-2">
+        <h3 class="text-sm font-medium text-secondary"><%= t(".breakdown_title") %></h3>
+        <%= render "custom_instruments/preview",
+              quote: @quote,
+              error: @quote_error,
+              symbol: @instrument.symbol %>
+      </section>
+
+      <section class="space-y-2">
+        <h3 class="text-sm font-medium text-secondary"><%= t(".definition_title") %></h3>
+        <p class="break-words rounded-lg bg-container-inset p-3 font-mono text-sm text-primary">
+          <%= @instrument.formula %>
+        </p>
+      </section>
+
+      <section class="space-y-2">
+        <h3 class="text-sm font-medium text-secondary"><%= t(".positions_title") %></h3>
+        <% if @positions.any? %>
+          <%= render DS::Table.new(rows: @positions, inset: true, label: t(".positions_title")) do |table| %>
+            <% table.with_column(t(".account")) { |holding| holding.account.name } %>
+            <% table.with_column(t(".quantity"), numeric: true) { |holding| format_quantity(holding.qty) } %>
+            <% table.with_column(t(".value"), numeric: true, class: "privacy-sensitive") do |holding| %>
+              <%= price ? format_money(price * holding.qty) : t(".unknown") %>
+            <% end %>
+          <% end %>
+        <% else %>
+          <p class="text-sm text-secondary"><%= t(".no_positions") %></p>
+        <% end %>
+      </section>
+
+      <% if @dependents.any? %>
+        <section class="space-y-2">
+          <h3 class="text-sm font-medium text-secondary"><%= t(".used_by_title") %></h3>
+          <ul class="space-y-1">
+            <% @dependents.each do |dependent| %>
+              <li>
+                <%= link_to custom_instrument_path(dependent),
+                      class: "flex items-center gap-2 text-sm text-link underline underline-offset-2 hover:no-underline focus-ring rounded-sm",
+                      data: { turbo_frame: "drawer" } do %>
+                  <span class="font-mono"><%= dependent.symbol %></span>
+                  <span class="text-secondary"><%= dependent.name %></span>
+                <% end %>
+              </li>
+            <% end %>
+          </ul>
+        </section>
+      <% end %>
+    </div>
+  <% end %>
+<% end %>

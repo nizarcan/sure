@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_23_220100) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_25_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -577,6 +577,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_220100) do
     t.string "subtype"
     t.string "tax_treatment", default: "taxable", null: false
     t.datetime "updated_at", null: false
+  end
+
+  create_table "custom_instrument_components", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "custom_instrument_id", null: false
+    t.string "currency"
+    t.uuid "security_id"
+    t.decimal "weight", precision: 34, scale: 18, null: false
+    t.integer "position", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["custom_instrument_id"], name: "index_custom_instrument_components_on_custom_instrument_id"
+    t.index ["security_id"], name: "index_custom_instrument_components_on_security_id"
+    t.check_constraint "(currency IS NULL) <> (security_id IS NULL)", name: "chk_custom_instrument_components_source"
+  end
+
+  create_table "custom_instruments", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "security_id", null: false
+    t.string "name", null: false
+    t.string "symbol", null: false
+    t.text "formula", null: false
+    t.string "currency", null: false
+    t.text "description"
+    t.datetime "archived_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id", "symbol"], name: "index_custom_instruments_on_family_id_and_symbol", unique: true
+    t.index ["family_id"], name: "index_custom_instruments_on_family_id"
+    t.index ["security_id"], name: "index_custom_instruments_on_security_id", unique: true
   end
 
   create_table "data_enrichments", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -2394,7 +2423,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_220100) do
     t.check_constraint "asset_class::text = ANY (ARRAY['alternative_investment'::character varying::text, 'commodity'::character varying::text, 'equity'::character varying::text, 'fixed_income'::character varying::text, 'liquidity'::character varying::text, 'real_estate'::character varying::text])", name: "chk_securities_asset_class"
     t.check_constraint "asset_sub_class::text = ANY (ARRAY['bond'::character varying::text, 'cash'::character varying::text, 'collectible'::character varying::text, 'commodity'::character varying::text, 'cryptocurrency'::character varying::text, 'etf'::character varying::text, 'loan'::character varying::text, 'mutual_fund'::character varying::text, 'precious_metal'::character varying::text, 'private_equity'::character varying::text, 'real_estate'::character varying::text, 'stock'::character varying::text])", name: "chk_securities_asset_sub_class"
     t.check_constraint "classification_source::text = ANY (ARRAY['provider'::character varying::text, 'manual'::character varying::text, 'ai'::character varying::text, 'default'::character varying::text])", name: "chk_securities_classification_source"
-    t.check_constraint "kind::text = ANY (ARRAY['standard'::character varying::text, 'cash'::character varying::text])", name: "chk_securities_kind"
+    t.check_constraint "kind::text = ANY (ARRAY['standard'::character varying::text, 'cash'::character varying::text, 'custom'::character varying::text])", name: "chk_securities_kind"
   end
 
   create_table "security_audit_logs", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -3202,6 +3231,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_220100) do
   add_foreign_key "coinspot_items", "families"
   add_foreign_key "coinstats_accounts", "coinstats_items"
   add_foreign_key "coinstats_items", "families"
+  add_foreign_key "custom_instrument_components", "custom_instruments", on_delete: :cascade
+  add_foreign_key "custom_instrument_components", "securities", on_delete: :cascade
+  add_foreign_key "custom_instruments", "families", on_delete: :cascade
+  add_foreign_key "custom_instruments", "securities", on_delete: :cascade
   add_foreign_key "debug_log_entries", "account_providers", on_delete: :nullify
   add_foreign_key "debug_log_entries", "accounts", on_delete: :nullify
   add_foreign_key "debug_log_entries", "families", on_delete: :nullify

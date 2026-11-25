@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 json.id security.id
-json.ticker security.ticker
+json.ticker security.display_ticker
 json.name security.name
 json.kind security.kind
 json.country_code security.country_code

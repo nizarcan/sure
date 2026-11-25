@@ -808,6 +808,19 @@ Rails.application.routes.draw do
 
   resources :securities, only: :index
 
+  resources :custom_instruments do
+    collection do
+      post :preview
+    end
+
+    member do
+      post :archive
+      post :unarchive
+      post :refresh
+      get :add_units
+    end
+  end
+
   resources :invite_codes, only: %i[index create destroy]
 
   resources :invitations, only: [ :new, :create, :destroy ] do

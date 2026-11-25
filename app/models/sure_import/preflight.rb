@@ -42,6 +42,7 @@ class SureImport::Preflight
     "Balance" => %w[account_id date balance],
     "Category" => %w[id name],
     "Tag" => %w[id name],
+    "CustomInstrument" => %w[id name symbol formula currency],
     "Merchant" => %w[id name],
     "ProviderMerchant" => %w[id name source],
     "RecurringTransaction" => %w[id amount expected_day_of_month last_occurrence_date next_expected_date],
@@ -81,6 +82,7 @@ class SureImport::Preflight
   # excluded from TAXONOMY_TYPES, whose collision/duplicate-name checks assume
   # family-scoped uniqueness.
   SOURCE_ID_TYPES = TAXONOMY_TYPES.merge(
+    "CustomInstrument" => :custom_instruments,
     "ProviderMerchant" => :merchants,
     "Account" => :accounts,
     "RecurringTransaction" => :recurring_transactions,

@@ -13,13 +13,14 @@ class MarketDataImporter
   def import_all
     import_security_prices
     import_exchange_rates
+    import_custom_instruments
   end
 
   # Syncs historical security prices (and details)
   def import_security_prices
-    unless Security.providers.any?
-      Rails.logger.warn("No provider configured for MarketDataImporter.import_security_prices, skipping sync")
-      return
+    provider_available = Security.providers.any?
+    unless provider_available
+      Rails.logger.warn("No provider configured for MarketDataImporter.import_security_prices, skipping provider sync")
     end
 
     # A security may be shared by accounts with different holding periods. Merge
@@ -27,6 +28,10 @@ class MarketDataImporter
     windows = required_security_price_windows
 
     Security.online.where(id: windows.keys).find_each do |security|
+      # A custom instrument has no securities provider of its own; it is priced
+      # from its components and still belongs in this held window.
+      next unless provider_available || security.custom?
+
       window = windows.fetch(security.id)
       next if snapshot? && window.end_date < default_start_date
 
@@ -37,9 +42,11 @@ class MarketDataImporter
       )
     end
 
+    return unless provider_available
+
     # Details are metadata rather than prices, and import_provider_details skips
     # the provider once a security has them, so every online security keeps them.
-    Security.online.find_each do |security|
+    Security.online.where.not(kind: "custom").find_each do |security|
       security.import_provider_details(clear_cache: clear_cache)
     end
   end
@@ -60,6 +67,24 @@ class MarketDataImporter
         start_date: start_date,
         end_date: end_date,
         clear_cache: clear_cache
+      )
+    end
+  end
+
+  # Custom instruments are priced from other securities and rates rather than
+  # a securities provider, so this runs even when none is configured. Errors
+  # are isolated per instrument: one bad formula must not stop the rest.
+  def import_custom_instruments
+    CustomInstrument.active.find_each do |instrument|
+      instrument.import_prices(start_date: default_start_date, end_date: end_date, clear_cache: clear_cache)
+    rescue => error
+      DebugLogEntry.capture(
+        category: "custom_instruments",
+        level: "error",
+        message: "Could not import prices for a custom instrument",
+        source: self.class.name,
+        family: instrument.family,
+        metadata: { custom_instrument_id: instrument.id, error: error.message }
       )
     end
   end

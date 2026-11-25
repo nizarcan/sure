@@ -3,7 +3,9 @@ tr:
   securities:
     combobox:
       display: "%{symbol} - %{name} (%{exchange})"
+      display_custom: "%{symbol} - %{name}"
       exchange_label: "%{symbol} (%{exchange})"
+      custom: Özel
     providers:
       alpha_vantage: Alpha Vantage
       binance_public: Binance

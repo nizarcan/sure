@@ -31,7 +31,7 @@ class Family::DataImporter
     end
   end
 
-  SUPPORTED_TYPES = %w[Account Balance Category Tag Merchant ProviderMerchant RecurringTransaction RecurrenceRule RecurringOccurrence RecurringAllocation RecurringPriceChange RecurringMatchRejection Transaction Transfer RejectedTransfer Trade Holding Valuation Budget BudgetCategory Rule].freeze
+  SUPPORTED_TYPES = %w[Account Balance Category Tag CustomInstrument Merchant ProviderMerchant RecurringTransaction RecurrenceRule RecurringOccurrence RecurringAllocation RecurringPriceChange RecurringMatchRejection Transaction Transfer RejectedTransfer Trade Holding Valuation Budget BudgetCategory Rule].freeze
   PROPERTY_DETAIL_ATTRIBUTES = %w[year_built area_value area_unit].freeze
   PROPERTY_ADDRESS_ATTRIBUTES = %w[line1 line2 locality region county postal_code country].freeze
   VEHICLE_DETAIL_ATTRIBUTES = %w[make model year mileage_value mileage_unit].freeze
@@ -57,6 +57,7 @@ class Family::DataImporter
     accounts: "Account",
     categories: "Category",
     tags: "Tag",
+    custom_instruments: "CustomInstrument",
     merchants: "Merchant",
     recurring_transactions: "RecurringTransaction",
     recurring_occurrences: "RecurringOccurrence",
@@ -70,6 +71,7 @@ class Family::DataImporter
     "Balance" => "balances",
     "Category" => "categories",
     "Tag" => "tags",
+    "CustomInstrument" => "custom_instruments",
     "Merchant" => "merchants",
     "ProviderMerchant" => "provider_merchants",
     "RecurringTransaction" => "recurring_transactions",
@@ -101,6 +103,7 @@ class Family::DataImporter
       accounts: {},
       categories: {},
       tags: {},
+      custom_instruments: {},
       merchants: {},
       recurring_transactions: {},
       recurring_occurrences: {},
@@ -130,6 +133,10 @@ class Family::DataImporter
       import_categories(records["Category"] || [])
       import_tags(records["Tag"] || [])
       link_property_cost_tags(records["Account"] || [])
+      # Custom instruments come before anything that references their
+      # security, and after accounts so a failed chunk has the family's
+      # accounts already mapped.
+      import_custom_instruments(records["CustomInstrument"] || [])
       import_merchants(records["Merchant"] || [])
       import_provider_merchants(records["ProviderMerchant"] || [])
       import_recurring_transactions(records["RecurringTransaction"] || [])
@@ -557,6 +564,88 @@ class Family::DataImporter
         map_source!(:tags, old_id, tag)
         increment_summary("Tag", created ? :created : :updated)
       end
+    end
+
+    # A custom instrument's security could not be a trade's target before it
+    # exists, so instruments land first. A symbol the family already has is
+    # reused untouched, exactly as a Tag with an existing name is. An
+    # instrument that cannot be created (for example, an unknown bracket
+    # reference in its formula) is skipped rather than aborting the whole
+    # file; its trades and holdings then fall back to an offline manual
+    # security named after the symbol (see #offline_security_for_skipped_instrument).
+    #
+    # Archived rows are created unarchived so a dependent formula can resolve
+    # them, then archived after every instrument exists.
+    def import_custom_instruments(records)
+      archived = []
+
+      records.each do |record|
+        data = record["data"]
+        old_id = data["id"]
+
+        require_source_id!("CustomInstrument", old_id)
+
+        instrument = mapped_record(:custom_instruments, old_id, @family.custom_instruments, record_type: "CustomInstrument")
+        instrument ||= @family.custom_instruments.find_by("UPPER(symbol) = ?", data["symbol"].to_s.upcase)
+        created = instrument.blank?
+
+        if created
+          instrument = @family.custom_instruments.new(
+            name: data["name"],
+            symbol: data["symbol"],
+            formula: data["formula"],
+            currency: data["currency"],
+            description: data["description"]
+          )
+
+          begin
+            instrument.save!
+          rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotSaved => error
+            skip_custom_instrument(record, error)
+            next
+          end
+
+          archived << [ instrument, data["archived_at"] ] if data["archived_at"].present?
+        end
+
+        map_source!(:custom_instruments, old_id, instrument)
+        map_source!(:securities, data["security_id"], instrument.security) if data["security_id"].present?
+        increment_summary("CustomInstrument", created ? :created : :updated)
+      end
+
+      archive_imported_custom_instruments(archived)
+    end
+
+    def skip_custom_instrument(record, error)
+      data = record["data"] || {}
+      increment_summary("CustomInstrument", :skipped)
+      DebugLogEntry.capture(
+        category: "import",
+        level: "warn",
+        message: "Skipped a custom instrument that could not be imported",
+        source: self.class.name,
+        family: @family,
+        metadata: {
+          source_id: data["id"],
+          symbol: data["symbol"],
+          errors: error.record&.errors&.full_messages
+        }
+      )
+    end
+
+    def archive_imported_custom_instruments(pending)
+      pending.each do |instrument, archived_at|
+        time = parse_import_time(archived_at)
+        next if time.blank?
+
+        instrument.update_columns(archived_at: time)
+      end
+    end
+
+    def parse_import_time(value)
+      Time.zone.parse(value.to_s)
+    rescue ArgumentError
+      nil
     end
 
     # A property's cost tag is imported after the accounts, so the link is
@@ -1039,7 +1128,8 @@ class Family::DataImporter
         # Source-system metadata, such as the ID that lets a later import from
         # that system recognise the transaction, kept out of external_id so
         # provider sync can still claim the entry.
-        transaction.extra = transaction.extra.merge(data["extra"]) if data["extra"].is_a?(Hash)
+        extra = imported_transaction_extra(data)
+        transaction.extra = transaction.extra.merge(extra) if extra.present?
 
         entry ||= Entry.new(entryable: transaction)
         entry.assign_attributes(
@@ -1084,6 +1174,32 @@ class Family::DataImporter
       Array(old_tag_ids).map do |old_tag_id|
         mapped_id(:tags, old_tag_id, record_type: record_type)
       end.compact.uniq
+    end
+
+    # `extra` can carry the security an investment activity belongs to, which
+    # the API and the web UI read back (Transaction#activity_security). A row
+    # for another family's custom security would expose it here, so that
+    # reference is dropped; standard and cash securities stay shared as before.
+    def imported_transaction_extra(data)
+      extra = data["extra"]
+      return unless extra.is_a?(Hash)
+
+      extra = extra.deep_dup
+      extra.delete("security_id") unless importable_activity_security?(extra["security_id"])
+
+      nested_security = extra["security"]
+      if nested_security.is_a?(Hash) && !importable_activity_security?(nested_security["id"])
+        extra.delete("security")
+      end
+
+      extra
+    end
+
+    def importable_activity_security?(id)
+      return true unless id.is_a?(String) && uuid_like?(id)
+      return true unless Security.where(id: id, kind: "custom").exists?
+
+      @family.custom_instruments.where(security_id: id).exists?
     end
 
     def importable_split_rows(data)
@@ -1233,13 +1349,17 @@ class Family::DataImporter
         ticker = data["ticker"]
         next unless ticker.present?
 
-        security = find_or_create_security(
+        security = find_or_create_import_security(
+          data,
           ticker,
-          data["currency"],
-          old_security_id: data["security_id"],
+          record_type: "Trade",
           name: data["security_name"],
           exchange_operating_mic: data["exchange_operating_mic"]
         )
+        if security.blank?
+          increment_summary("Trade", :skipped)
+          next
+        end
 
         entry = session_imported_entry(account, "Trade", old_id)
         trade = entry&.entryable if entry&.entryable.is_a?(Trade)
@@ -1361,10 +1481,10 @@ class Family::DataImporter
         ticker = data["ticker"]
         next unless ticker.present?
 
-        security = find_or_create_security(
+        security = find_or_create_import_security(
+          data,
           ticker,
-          data["currency"],
-          old_security_id: data["security_id"],
+          record_type: "Holding",
           name: data["security_name"],
           exchange_operating_mic: data["exchange_operating_mic"],
           exchange_mic: data["exchange_mic"],
@@ -1373,6 +1493,10 @@ class Family::DataImporter
           kind: data["kind"],
           website_url: data["website_url"]
         )
+        if security.blank?
+          increment_summary("Holding", :skipped)
+          next
+        end
 
         holding_date = Date.parse(data["date"].to_s)
         holding_currency = data["currency"] || account.currency
@@ -1894,6 +2018,53 @@ class Family::DataImporter
       ActiveModel::Type::Boolean.new.cast(value)
     end
 
+    # A trade or holding that carries a custom instrument's id resolves
+    # through the import map. Without one it is an ordinary security: a row is
+    # never attached to an instrument just because the ticker happens to be
+    # that instrument's symbol.
+    def find_or_create_import_security(data, ticker, record_type:, **attributes)
+      if data["custom_instrument_id"].present?
+        instrument = imported_custom_instrument(data["custom_instrument_id"], record_type)
+        return instrument.security if instrument
+
+        return offline_security_for_skipped_instrument(ticker)
+      end
+
+      find_or_create_security(
+        ticker,
+        data["currency"],
+        old_security_id: data["security_id"],
+        **attributes
+      )
+    end
+
+    def imported_custom_instrument(old_id, record_type)
+      instrument_id = mapped_id(:custom_instruments, old_id, record_type: record_type, required: false)
+      return if instrument_id.blank?
+
+      @family.custom_instruments.find_by(id: instrument_id)
+    end
+
+    # The instrument a row named did not import, so the row becomes an offline
+    # manual security named after its symbol. An existing blank-MIC offline row
+    # with that ticker is reused; a listed or online row means a provider could
+    # price an unrelated real ticker, so the row is skipped instead (nil).
+    def offline_security_for_skipped_instrument(ticker)
+      symbol = ticker.to_s.upcase
+      return if symbol.blank?
+
+      scope = Security.where.not(kind: "custom").where("UPPER(ticker) = ?", symbol)
+      return if scope.where("COALESCE(exchange_operating_mic, '') <> ''").exists?
+      return if scope.where.not(offline: true).exists?
+
+      # An offline row with a reason is expected back online, and the row is
+      # shared with other families, so it is left alone rather than settled here.
+      existing = scope.order(:created_at).first
+      return (existing if existing.offline_reason.blank?) if existing
+
+      Security.create!(ticker: symbol, offline: true, offline_reason: nil)
+    end
+
     def find_or_create_security(ticker, currency, old_security_id: nil, **attributes)
       # Check cache first
       normalized_ticker = ticker.to_s.upcase
@@ -1914,6 +2085,11 @@ class Family::DataImporter
         return security
       end
 
+      # A raw CUSTOM-<uuid> is only meaningful through its instrument's map,
+      # which the branch above owns. Never restore one as a security of its
+      # own: that would be a custom row no instrument describes.
+      return if Security.custom_ticker?(normalized_ticker)
+
       security = find_security_by_identity(normalized_ticker, exchange_operating_mic)
       apply_security_metadata(security, normalized_ticker, attributes)
 
@@ -1922,14 +2098,19 @@ class Family::DataImporter
       security
     end
 
+    # A custom security's ticker is a globally unique CUSTOM-<uuid>, so a bare
+    # ticker from a file can never be one: matching one would attach a payload
+    # to another family's instrument.
     def find_security_by_identity(ticker, exchange_operating_mic)
+      scope = Security.where.not(kind: "custom")
+
       if exchange_operating_mic.present?
-        return Security.find_or_initialize_by(ticker: ticker, exchange_operating_mic: exchange_operating_mic)
+        return scope.find_or_initialize_by(ticker: ticker, exchange_operating_mic: exchange_operating_mic)
       end
 
       # Without an exchange MIC, matching by ticker is a best-effort restore path and can merge same-ticker securities from different venues.
-      Security.find_by(ticker: ticker, exchange_operating_mic: nil) ||
-        Security.where(ticker: ticker).order(:created_at).first ||
+      scope.find_by(ticker: ticker, exchange_operating_mic: nil) ||
+        scope.where(ticker: ticker).order(:created_at).first ||
         Security.new(ticker: ticker)
     end
 
@@ -1977,8 +2158,11 @@ class Family::DataImporter
       created
     end
 
+    # Only the kinds a file may create. "custom" is deliberately excluded: a
+    # custom row is only ever created together with its instrument, never from
+    # a payload's kind.
     def security_kind_for(value)
       kind = value.to_s
-      Security::KINDS.include?(kind) ? kind : Security::KINDS.first
+      kind.in?(Security::KINDS - [ "custom" ]) ? kind : Security::KINDS.first
     end
 end

@@ -2,6 +2,7 @@ require "test_helper"
 
 class Family::DataImporterTest < ActiveSupport::TestCase
   include EntriesTestHelper
+  include CustomInstrumentTestHelper
 
   setup do
     @family = families(:empty)
@@ -4000,6 +4001,469 @@ class Family::DataImporterTest < ActiveSupport::TestCase
     assert_operator RecurringAllocation.joins(:recurring_occurrence)
       .where(recurring_occurrences: { recurring_transaction_id: series.id }).count, :>, 0,
       "the later chunk's allocation must resolve its occurrence through the persisted mapping"
+  end
+
+  test "round trips custom instruments with nested and archived instruments" do
+    source = Family.create!(name: "Source Instrument Family", currency: "USD", locale: "en", date_format: "%Y-%m-%d")
+    base = create_custom_instrument(family: source, name: "Gram gold", symbol: "GRAU", formula: "2 * USD")
+    nested = create_custom_instrument(family: source, name: "Double gram", symbol: "DGRAU", formula: "2 * GRAU")
+    archived = create_custom_instrument(family: source, name: "Old gram", symbol: "OLDG", formula: "3 * USD")
+    archived.archive!
+    account = source.accounts.create!(name: "Custom Round Trip", accountable: Investment.new, balance: 0, currency: "USD")
+    account.entries.create!(
+      date: Date.current, name: "Buy DGRAU", amount: 100, currency: "USD",
+      entryable: Trade.new(security: nested.security, qty: 2, price: 50, currency: "USD")
+    )
+    account.holdings.create!(
+      security: nested.security, date: Date.current, qty: 2, price: 50, amount: 100, currency: "USD"
+    )
+
+    Family::DataImporter.new(@family, full_export_ndjson(source)).import!
+
+    imported_base = @family.custom_instruments.find_by!(symbol: "GRAU")
+    imported_nested = @family.custom_instruments.find_by!(symbol: "DGRAU")
+    imported_archived = @family.custom_instruments.find_by!(symbol: "OLDG")
+
+    assert_equal "Gram gold", imported_base.name
+    assert_equal "2 * USD", imported_base.formula
+    assert_equal "Double gram", imported_nested.name
+    assert_equal "2 * GRAU", imported_nested.formula
+    assert_equal "USD", imported_nested.currency
+    assert imported_archived.archived?, "an archived instrument stays archived"
+    assert_not_equal archived.id, imported_archived.id
+    assert_not_equal archived.security_id, imported_archived.security_id, "the security is recreated, not copied by id"
+    assert imported_nested.components.any? { |component| component.security_id == imported_base.security_id },
+      "the nested formula resolves to the imported component, not a plain security"
+
+    imported_account = @family.accounts.find_by!(name: "Custom Round Trip")
+    trade = imported_account.trades.sole
+    assert_equal imported_nested.security, trade.security
+    assert_equal "DGRAU", trade.security.display_ticker
+    assert_equal imported_nested.security, imported_account.holdings.sole.security
+  end
+
+  test "an imported custom instrument reuses a same-symbol instrument unchanged and maps its security" do
+    existing = create_custom_instrument(family: @family, name: "Mine", symbol: "GRAU", formula: "2 * USD")
+
+    ndjson = build_ndjson([
+      {
+        type: "Account",
+        data: {
+          id: "custom-acct-1", name: "Custom Brokerage", balance: "0", currency: "USD",
+          accountable_type: "Investment"
+        }
+      },
+      {
+        type: "CustomInstrument",
+        data: {
+          id: "instrument-1", security_id: "instrument-security-1", name: "Theirs",
+          symbol: "GRAU", formula: "5 * USD", currency: "USD"
+        }
+      },
+      {
+        type: "Trade",
+        data: {
+          id: "custom-trade-1", account_id: "custom-acct-1", security_id: "instrument-security-1",
+          custom_instrument_id: "instrument-1", ticker: "GRAU", date: "2024-01-10",
+          qty: "2", price: "50", amount: "-100", currency: "USD"
+        }
+      }
+    ])
+
+    result = Family::DataImporter.new(@family, ndjson).import!
+
+    assert_equal 1, result[:summary].dig("custom_instruments", "updated")
+    assert_equal 0, result[:summary].dig("custom_instruments", "created").to_i
+    assert_equal 1, @family.custom_instruments.where(symbol: "GRAU").count
+    assert_equal "Mine", existing.reload.name, "the existing instrument is not modified"
+    assert_equal "2 * USD", existing.formula
+    trade = @family.accounts.find_by!(name: "Custom Brokerage").trades.sole
+    assert_equal existing.security, trade.security
+  end
+
+  test "a custom instrument that fails validation is skipped and its trade falls back to a plain security" do
+    ndjson = build_ndjson([
+      {
+        type: "Account",
+        data: {
+          id: "custom-acct-1", name: "Custom Brokerage", balance: "0", currency: "USD",
+          accountable_type: "Investment"
+        }
+      },
+      {
+        type: "CustomInstrument",
+        data: {
+          id: "instrument-1", security_id: "instrument-security-1", name: "Broken",
+          symbol: "BADM", formula: "XAU * XAG", currency: "USD"
+        }
+      },
+      {
+        type: "Trade",
+        data: {
+          id: "custom-trade-1", account_id: "custom-acct-1", security_id: "instrument-security-1",
+          custom_instrument_id: "instrument-1", ticker: "BADM", date: "2024-01-10",
+          qty: "2", price: "50", amount: "-100", currency: "USD"
+        }
+      }
+    ])
+
+    result = Family::DataImporter.new(@family, ndjson).import!
+
+    assert_equal 1, result[:summary].dig("custom_instruments", "skipped")
+    assert_nil @family.custom_instruments.find_by(symbol: "BADM")
+    trade = @family.accounts.find_by!(name: "Custom Brokerage").trades.sole
+    assert_equal "BADM", trade.security.ticker
+    assert_equal "standard", trade.security.kind
+    assert trade.security.offline?, "a fallback security must never be priced by a provider"
+    assert_nil trade.security.offline_reason
+    assert_not Security.custom_ticker?(trade.security.ticker)
+  end
+
+  test "a skipped instrument's row reuses an existing offline blank-mic security" do
+    existing = Security.create!(ticker: "BADOF", name: "Offline Bad", offline: true)
+    ndjson = build_ndjson([
+      {
+        type: "Account",
+        data: {
+          id: "custom-acct-1", name: "Custom Brokerage", balance: "0", currency: "USD",
+          accountable_type: "Investment"
+        }
+      },
+      {
+        type: "CustomInstrument",
+        data: {
+          id: "instrument-1", security_id: "instrument-security-1", name: "Broken",
+          symbol: "BADOF", formula: "XAU * XAG", currency: "USD"
+        }
+      },
+      {
+        type: "Trade",
+        data: {
+          id: "custom-trade-1", account_id: "custom-acct-1", security_id: "instrument-security-1",
+          custom_instrument_id: "instrument-1", ticker: "BADOF", date: "2024-01-10",
+          qty: "2", price: "50", amount: "-100", currency: "USD"
+        }
+      }
+    ])
+
+    Family::DataImporter.new(@family, ndjson).import!
+
+    trade = @family.accounts.find_by!(name: "Custom Brokerage").trades.sole
+    assert_equal existing, trade.security
+    assert trade.security.offline?
+  end
+
+  # Securities are shared between families: a restore must neither use a row a
+  # provider may price later nor settle its state for everyone else.
+  test "a skipped instrument's row leaves a shared security awaiting a provider untouched" do
+    shared = Security.create!(ticker: "BADRP", name: "Pending", offline: true, offline_reason: "resolution_pending")
+    ndjson = build_ndjson([
+      { type: "Account", data: { id: "a-1", name: "Pending Brokerage", balance: "0", currency: "USD", accountable_type: "Investment" } },
+      { type: "CustomInstrument", data: { id: "i-1", security_id: "s-1", name: "Broken", symbol: "BADRP", formula: "XAU * XAG", currency: "USD" } },
+      { type: "Trade", data: { id: "t-1", account_id: "a-1", security_id: "s-1", custom_instrument_id: "i-1", ticker: "BADRP",
+                               date: "2024-01-10", qty: "2", price: "50", amount: "-100", currency: "USD" } }
+    ])
+
+    Family::DataImporter.new(@family, ndjson).import!
+
+    assert_empty @family.accounts.find_by!(name: "Pending Brokerage").trades
+    assert_equal "resolution_pending", shared.reload.offline_reason
+  end
+
+  test "a skipped instrument's row is skipped when a listed security already has its ticker" do
+    existing = Security.create!(ticker: "BADL", name: "Listed Bad", exchange_operating_mic: "XNAS", offline: true)
+    ndjson = build_ndjson([
+      {
+        type: "Account",
+        data: {
+          id: "custom-acct-1", name: "Custom Brokerage", balance: "0", currency: "USD",
+          accountable_type: "Investment"
+        }
+      },
+      {
+        type: "CustomInstrument",
+        data: {
+          id: "instrument-1", security_id: "instrument-security-1", name: "Broken",
+          symbol: "BADL", formula: "XAU * XAG", currency: "USD"
+        }
+      },
+      {
+        type: "Trade",
+        data: {
+          id: "custom-trade-1", account_id: "custom-acct-1", security_id: "instrument-security-1",
+          custom_instrument_id: "instrument-1", ticker: "BADL", date: "2024-01-10",
+          qty: "2", price: "50", amount: "-100", currency: "USD"
+        }
+      }
+    ])
+
+    result = Family::DataImporter.new(@family, ndjson).import!
+
+    assert_equal 1, result[:summary].dig("custom_instruments", "skipped")
+    assert_equal 1, result[:summary].dig("trades", "skipped")
+    assert_empty @family.accounts.find_by!(name: "Custom Brokerage").trades
+    assert_equal existing, existing.reload
+    assert_empty existing.trades
+  end
+
+  test "a skipped instrument's row is skipped when an online security already has its ticker" do
+    existing = Security.create!(ticker: "BADON", name: "Online Bad")
+    ndjson = build_ndjson([
+      {
+        type: "Account",
+        data: {
+          id: "custom-acct-1", name: "Custom Brokerage", balance: "0", currency: "USD",
+          accountable_type: "Investment"
+        }
+      },
+      {
+        type: "CustomInstrument",
+        data: {
+          id: "instrument-1", security_id: "instrument-security-1", name: "Broken",
+          symbol: "BADON", formula: "XAU * XAG", currency: "USD"
+        }
+      },
+      {
+        type: "Holding",
+        data: {
+          id: "custom-holding-1", account_id: "custom-acct-1", security_id: "instrument-security-1",
+          custom_instrument_id: "instrument-1", ticker: "BADON", date: "2024-01-10",
+          qty: "2", price: "50", amount: "100", currency: "USD"
+        }
+      }
+    ])
+
+    result = Family::DataImporter.new(@family, ndjson).import!
+
+    assert_equal 1, result[:summary].dig("custom_instruments", "skipped")
+    assert_equal 1, result[:summary].dig("holdings", "skipped")
+    assert_empty @family.accounts.find_by!(name: "Custom Brokerage").holdings
+    assert_equal existing, existing.reload
+  end
+
+  test "a payload cannot attach to another family's custom security" do
+    foreign = create_custom_instrument(family: families(:dylan_family), name: "Foreign gram", symbol: "FOREIGN")
+    ndjson = build_ndjson([
+      {
+        type: "Account",
+        data: {
+          id: "custom-acct-1", name: "Custom Brokerage", balance: "0", currency: "USD",
+          accountable_type: "Investment"
+        }
+      },
+      {
+        type: "Trade",
+        data: {
+          id: "custom-trade-1", account_id: "custom-acct-1", security_id: foreign.security.id,
+          ticker: foreign.security.ticker, date: "2024-01-10",
+          qty: "2", price: "50", amount: "-100", currency: "USD"
+        }
+      }
+    ])
+
+    result = Family::DataImporter.new(@family, ndjson).import!
+
+    assert_equal 1, result[:summary].dig("trades", "skipped")
+    assert_empty @family.accounts.find_by!(name: "Custom Brokerage").trades
+    assert_equal foreign.security, foreign.security.reload
+  end
+
+  test "a same-symbol payload without a custom instrument gets a plain security, never a custom one" do
+    foreign = create_custom_instrument(family: families(:dylan_family), name: "Foreign gram", symbol: "FOREIGN")
+    ndjson = build_ndjson([
+      {
+        type: "Account",
+        data: {
+          id: "custom-acct-1", name: "Custom Brokerage", balance: "0", currency: "USD",
+          accountable_type: "Investment"
+        }
+      },
+      {
+        type: "Holding",
+        data: {
+          id: "custom-holding-1", account_id: "custom-acct-1", security_id: foreign.security.id,
+          ticker: "FOREIGN", kind: "custom", date: "2024-01-10",
+          qty: "2", price: "50", amount: "100", currency: "USD"
+        }
+      }
+    ])
+
+    Family::DataImporter.new(@family, ndjson).import!
+
+    holding = @family.accounts.find_by!(name: "Custom Brokerage").holdings.sole
+    assert_equal "FOREIGN", holding.security.ticker
+    assert_equal "standard", holding.security.kind
+    assert_not_equal foreign.security, holding.security
+  end
+
+  test "an imported transaction drops another family's custom security from extra" do
+    foreign = create_custom_instrument(family: families(:dylan_family), name: "Foreign gram", symbol: "FOREIGN")
+    ndjson = build_ndjson([
+      {
+        type: "Account",
+        data: {
+          id: "custom-acct-1", name: "Custom Brokerage", balance: "100", currency: "USD",
+          accountable_type: "Depository"
+        }
+      },
+      {
+        type: "Transaction",
+        data: {
+          id: "custom-txn-1", account_id: "custom-acct-1", date: "2024-01-10",
+          amount: "10", currency: "USD", name: "Dividend",
+          extra: { "security_id" => foreign.security.id, "source" => "kept" }
+        }
+      }
+    ])
+
+    Family::DataImporter.new(@family, ndjson).import!
+
+    transaction = @family.accounts.find_by!(name: "Custom Brokerage").transactions.sole
+    assert_equal "kept", transaction.extra["source"]
+    assert_not transaction.extra.key?("security_id")
+  end
+
+  test "a trade row without a custom instrument id never attaches to an instrument with the same ticker" do
+    instrument = create_custom_instrument(family: @family, name: "Gram gold", symbol: "GRAU", formula: "2 * USD")
+
+    ndjson = build_ndjson([
+      {
+        type: "Account",
+        data: {
+          id: "custom-acct-1", name: "Custom Brokerage", balance: "0", currency: "USD",
+          accountable_type: "Investment"
+        }
+      },
+      {
+        type: "Trade",
+        data: {
+          id: "custom-trade-1", account_id: "custom-acct-1", ticker: "GRAU", date: "2024-01-10",
+          qty: "2", price: "50", amount: "-100", currency: "USD"
+        }
+      }
+    ])
+
+    Family::DataImporter.new(@family, ndjson).import!
+
+    trade = @family.accounts.find_by!(name: "Custom Brokerage").trades.sole
+    assert_not_equal instrument.security, trade.security, "an ordinary security may share the instrument's symbol"
+    assert_equal "GRAU", trade.security.ticker
+    assert_equal "standard", trade.security.kind
+    assert_empty instrument.security.trades
+  end
+
+  test "restores a trade's security name and exchange mic" do
+    Security.create!(ticker: "RTAA", name: "Round Trip Apple Other", exchange_operating_mic: "XETR")
+    xnas = Security.create!(ticker: "RTAA", name: "Round Trip Apple", exchange_operating_mic: "XNAS")
+    ndjson = build_ndjson([
+      {
+        type: "Account",
+        data: {
+          id: "custom-acct-1", name: "Custom Brokerage", balance: "0", currency: "USD",
+          accountable_type: "Investment"
+        }
+      },
+      {
+        type: "Trade",
+        data: {
+          id: "custom-trade-1", account_id: "custom-acct-1", security_id: "old-rt",
+          ticker: "RTAA", exchange_operating_mic: "XNAS", security_name: "Round Trip Apple",
+          date: "2024-01-10", qty: "2", price: "50", amount: "-100", currency: "USD"
+        }
+      },
+      {
+        type: "Trade",
+        data: {
+          id: "custom-trade-2", account_id: "custom-acct-1", security_id: "old-new",
+          ticker: "RTNEW", exchange_operating_mic: "XNAS", security_name: "New Company",
+          date: "2024-01-11", qty: "1", price: "20", amount: "-20", currency: "USD"
+        }
+      }
+    ])
+
+    Family::DataImporter.new(@family, ndjson).import!
+
+    trades = @family.accounts.find_by!(name: "Custom Brokerage").trades.includes(:security).order(:date)
+    assert_equal xnas, trades.first.security, "the XNAS listing is chosen, not the other RTAA"
+    new_security = trades.second.security
+    assert_equal "RTNEW", new_security.ticker
+    assert_equal "XNAS", new_security.exchange_operating_mic
+    assert_equal "New Company", new_security.name
+  end
+
+  test "a custom instrument whose save aborts is skipped without aborting the import" do
+    CustomInstrument.any_instance.stubs(:save_security).throws(:abort)
+    ndjson = build_ndjson([
+      {
+        type: "CustomInstrument",
+        data: {
+          id: "instrument-1", security_id: "instrument-security-1", name: "Aborted",
+          symbol: "ABRT", formula: "2 * USD", currency: "USD"
+        }
+      }
+    ])
+
+    result = Family::DataImporter.new(@family, ndjson).import!
+
+    assert_equal 1, result[:summary].dig("custom_instruments", "skipped")
+    assert_nil @family.custom_instruments.find_by(symbol: "ABRT")
+  ensure
+    CustomInstrument.any_instance.unstub(:save_security)
+  end
+
+  test "an invalid archived_at does not abort importing the instrument" do
+    ndjson = build_ndjson([
+      {
+        type: "CustomInstrument",
+        data: {
+          id: "instrument-1", security_id: "instrument-security-1", name: "Bad archive",
+          symbol: "BADDT", formula: "2 * USD", currency: "USD", archived_at: "2024-13-45T99:99:99Z"
+        }
+      }
+    ])
+
+    result = Family::DataImporter.new(@family, ndjson).import!
+
+    assert_equal 1, result[:summary].dig("custom_instruments", "created")
+    instrument = @family.custom_instruments.find_by!(symbol: "BADDT")
+    assert_nil instrument.archived_at
+  end
+
+  test "export, reset and import in the same family restores instruments, trades and holdings" do
+    instrument = create_custom_instrument(family: @family, name: "Gram gold", symbol: "GRAU", formula: "2 * USD")
+    nested = create_custom_instrument(family: @family, name: "Double gram", symbol: "DGRAU", formula: "2 * GRAU")
+    ordinary = Security.create!(ticker: "XNAS1", name: "Ordinary Listing", exchange_operating_mic: "XNAS")
+    account = @family.accounts.create!(name: "Reset Round Trip", accountable: Investment.new, balance: 0, currency: "USD")
+    account.entries.create!(
+      date: Date.current, name: "Buy DGRAU", amount: 100, currency: "USD",
+      entryable: Trade.new(security: nested.security, qty: 2, price: 50, currency: "USD")
+    )
+    account.entries.create!(
+      date: Date.current, name: "Buy XNAS1", amount: 30, currency: "USD",
+      entryable: Trade.new(security: ordinary, qty: 1, price: 30, currency: "USD")
+    )
+    account.holdings.create!(
+      security: nested.security, date: Date.current, qty: 2, price: 50, amount: 100, currency: "USD"
+    )
+    ndjson = full_export_ndjson(@family)
+
+    Family::FinancialDataReset.new(family: @family, dry_run: false, confirmed: true).call
+
+    assert_empty @family.custom_instruments
+    assert_empty @family.accounts
+    assert Security.exists?(ordinary.id), "ordinary securities are shared and survive a reset"
+
+    Family::DataImporter.new(@family, ndjson).import!
+
+    imported_nested = @family.custom_instruments.find_by!(symbol: "DGRAU")
+    imported_base = @family.custom_instruments.find_by!(symbol: "GRAU")
+    assert_not_equal nested.id, imported_nested.id
+    assert_not_equal nested.security_id, imported_nested.security_id
+    assert_equal [ imported_base.security_id ], imported_nested.components.filter_map(&:security_id)
+
+    trades = @family.accounts.find_by!(name: "Reset Round Trip").trades.includes(:security)
+    assert_equal [ imported_nested.security, ordinary ], trades.map(&:security).sort_by(&:ticker)
+    assert_equal [ imported_nested.security ], @family.accounts.find_by!(name: "Reset Round Trip").holdings.includes(:security).map(&:security)
   end
 
   private

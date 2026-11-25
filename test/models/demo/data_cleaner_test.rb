@@ -22,6 +22,21 @@ class Demo::DataCleanerTest < ActiveSupport::TestCase
     assert_equal 0, Subscription.count
   end
 
+  test "clears custom instruments and their securities" do
+    instrument = families(:dylan_family).custom_instruments.create!(
+      name: "Demo gram", symbol: "DEMOG", currency: "USD", formula: "2 * USD"
+    )
+    families(:dylan_family).custom_instruments.create!(
+      name: "Demo double gram", symbol: "DEMOD", currency: "USD", formula: "2 * DEMOG"
+    )
+
+    clear!
+
+    assert_equal 0, CustomInstrument.count
+    assert_equal 0, CustomInstrumentComponent.count
+    assert_not Security.exists?(instrument.security_id)
+  end
+
   test "clears the last active super admin" do
     admin = users(:family_admin)
     User.where(role: "super_admin").where.not(id: admin.id).update_all(role: "admin")

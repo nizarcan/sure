@@ -32,6 +32,8 @@ class Family::FinancialDataReset
     budget_categories
     categories
     tags
+    custom_instruments
+    custom_instrument_components
     taggings
     merchants
     family_merchant_associations
@@ -138,6 +140,11 @@ class Family::FinancialDataReset
       delete_provider_items!
       family.financekit_account_lineages.destroy_all
       scope(:accounts).destroy_all
+      # Custom instruments are family-owned and their securities go with
+      # them. Their components are removed first so an instrument that another
+      # instrument named is no longer "in use" when it is destroyed.
+      scope(:custom_instrument_components).delete_all
+      scope(:custom_instruments).destroy_all
     end
 
     def active_storage_blob_ids
@@ -235,6 +242,7 @@ class Family::FinancialDataReset
         transaction_scope = Transaction.joins(:entry).where(entries: { account_id: account_ids })
         transaction_ids = transaction_scope.select(:id)
         tag_scope = Tag.where(family_id: family.id)
+        custom_instrument_scope = CustomInstrument.where(family_id: family.id)
 
         {
           account_statements: AccountStatement.where(family_id: family.id),
@@ -267,6 +275,8 @@ class Family::FinancialDataReset
           budget_categories: BudgetCategory.where(budget_id: budget_ids),
           categories: Category.where(family_id: family.id),
           tags: tag_scope,
+          custom_instruments: custom_instrument_scope,
+          custom_instrument_components: CustomInstrumentComponent.where(custom_instrument_id: custom_instrument_scope.select(:id)),
           taggings: Tagging.where(tag_id: tag_scope.select(:id)),
           merchants: FamilyMerchant.where(family_id: family.id),
           family_merchant_associations: FamilyMerchantAssociation.where(family_id: family.id),

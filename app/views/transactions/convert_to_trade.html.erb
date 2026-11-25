@@ -52,16 +52,16 @@
                 .where.not(security: nil)
                 .map(&:security)
                 .uniq(&:ticker)
-                .sort_by(&:ticker)
+                .sort_by(&:display_ticker)
 
               # Build options with price data for validation
               security_options_with_prices = account_securities.map do |s|
                 price = s.current_price
                 price_display = price ? " (#{format_money(price)})" : ""
-                label = "#{s.ticker}#{price_display}"
+                label = "#{s.display_ticker}#{price_display}"
                 label += " - #{s.name.truncate(25)}" if s.name.present?
                 price_cents = price ? (price.amount * 100).to_i : nil
-                [label, s.id, { "data-price-cents" => price_cents, "data-ticker" => s.ticker }]
+                [label, s.id, { "data-price-cents" => price_cents, "data-ticker" => s.display_ticker }]
               end
             %>
             <% if account_securities.any? %>

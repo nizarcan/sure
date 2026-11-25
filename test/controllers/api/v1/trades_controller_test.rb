@@ -80,6 +80,71 @@ class Api::V1::TradesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Buy", body["investment_activity_label"]
   end
 
+  test "create buy trade for the family's own custom instrument returns 201" do
+    instrument = @user.family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "USD", formula: "2 * USD"
+    )
+
+    post "/api/v1/trades",
+      params: { trade: {
+        account_id: @investment_account.id,
+        type: "buy",
+        date: Date.current,
+        qty: 2,
+        price: 50,
+        currency: "USD",
+        security_id: instrument.security.id
+      } },
+      headers: api_headers(read_write_api_key)
+
+    assert_response :created
+    body = JSON.parse(response.body)
+    assert_equal "GRAU", body.dig("security", "ticker")
+    assert_equal instrument.security, Trade.find(body["id"]).security
+  end
+
+  test "create trade rejects another family's custom security id" do
+    foreign = families(:empty).custom_instruments.create!(
+      name: "Foreign gram", symbol: "FOREIGN", currency: "USD", formula: "2 * USD"
+    )
+
+    assert_no_difference [ "Entry.count", "Trade.count" ] do
+      post "/api/v1/trades",
+        params: { trade: {
+          account_id: @investment_account.id,
+          type: "buy",
+          date: Date.current,
+          qty: 2,
+          price: 50,
+          currency: "USD",
+          security_id: foreign.security.id
+        } },
+        headers: api_headers(read_write_api_key)
+    end
+
+    assert_response :not_found
+    assert_equal "Security not found", JSON.parse(response.body)["message"]
+    assert_empty foreign.security.trades
+  end
+
+  test "an update names a trade by the custom instrument's symbol" do
+    instrument = @user.family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "USD", formula: "2 * USD"
+    )
+    entry = @investment_account.entries.create!(
+      date: Date.current, name: "Original", amount: 100, currency: "USD",
+      entryable: Trade.new(security: instrument.security, qty: 2, price: 50, currency: "USD")
+    )
+
+    patch api_v1_trade_url(entry.trade),
+      params: { trade: { qty: 3 } },
+      headers: api_headers(read_write_api_key)
+
+    assert_response :ok
+    assert_includes entry.reload.name, "GRAU"
+    assert_not_includes entry.reload.name, instrument.security.ticker
+  end
+
   test "create sell trade returns 201" do
     security = Security.create!(ticker: "TEST", name: "Test Security", country_code: "US")
 

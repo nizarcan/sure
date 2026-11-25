@@ -74,7 +74,7 @@ class InvestmentStatement
     @current_holdings ||= Holding::CurrentForInvestmentAccounts
       .new(investment_account_ids)
       .relation
-      .includes(:security, :account)
+      .includes(:account, security: :custom_instrument)
   end
 
   # current_holdings as an Array, with the average-cost fallback for every
@@ -469,7 +469,7 @@ class InvestmentStatement
     # `security` is nil only for the cash row #allocation appends.
     HoldingAllocation = Data.define(:security, :amount, :weight, :trend) do
       def cash? = security.nil?
-      def ticker = cash? ? CASH_TICKER : security.ticker
+      def ticker = cash? ? CASH_TICKER : security.display_ticker
       def name = cash? ? I18n.t("models.investment_statement.cash") : (security.name.presence || ticker)
       def amount_money = amount
     end
@@ -488,7 +488,7 @@ class InvestmentStatement
     # #allocation's.
     def allocation_by_security
       segments = holdings_rolled_up_by_security.map do |security, value, _holdings|
-        [ security.id, security.name.presence || security.ticker, value ]
+        [ security.id, security.name.presence || security.display_ticker, value ]
       end
       segments << [ "cash", I18n.t("models.investment_statement.cash"), account_cash_total ]
       build_segments(segments)
@@ -513,14 +513,15 @@ class InvestmentStatement
       build_segments(grouped.map { |currency, value| [ currency, currency, value ] })
     end
 
-    # Value by what kind of instrument each holding is -- cash, crypto or a
-    # standard security -- from the security's own flags, with each account's
-    # cash (`positive_account_cash`) under cash. Reads `allocatable_holdings` for the
-    # same reason as `allocation_by_currency`.
+    # Value by what kind of instrument each holding is -- cash, a family's
+    # custom instrument, crypto or a standard security -- from the security's
+    # own flags, with each account's cash (`positive_account_cash`) under cash.
+    # Reads `allocatable_holdings` for the same reason as `allocation_by_currency`.
     def allocation_by_kind
       grouped = Hash.new(0)
       allocatable_holdings.each do |holding|
         kind = if holding.security.cash? then "cash"
+        elsif holding.security.custom? then "custom"
         elsif holding.security.crypto? then "crypto"
         else "standard"
         end
@@ -583,7 +584,7 @@ class InvestmentStatement
       names = {}
       holdings_classified_as(column, bucket, cash_bucket, parent: parent).each do |holding|
         grouped[holding.security_id] += convert_to_family_currency(holding.amount, holding.currency)
-        names[holding.security_id] ||= holding.security.name.presence || holding.security.ticker
+        names[holding.security_id] ||= holding.security.name.presence || holding.security.display_ticker
       end
       build_segments(grouped.map { |id, value| [ id, names[id], value ] } + cash_rows)
     end
@@ -688,7 +689,7 @@ class InvestmentStatement
       :security, :positions, :accounts_count, :qty, :avg_cost, :amount, :weight,
       :unrealized, :day_change, :day_change_positions, :missing_cost_basis
     ) do
-      def ticker = security.ticker
+      def ticker = security.display_ticker
       # The Day change sums only the positions with a previous snapshot, while
       # the row's value sums them all.
       def day_change_partial? = day_change.present? && day_change_positions < positions.size

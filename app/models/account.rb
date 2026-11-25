@@ -940,16 +940,16 @@ class Account < ApplicationRecord
 
     rows = holdings
       .joins(:security)
-      .merge(Security.standard)
+      .where(securities: { kind: %w[standard custom] })
       .where(account_provider_id: nil)
       .where("holdings.qty < 0")
       .group(:security_id)
       .pluck(:security_id, Arel.sql("MIN(holdings.date)"), Arel.sql("MIN(holdings.qty)"))
     return [] if rows.empty?
 
-    securities = Security.where(id: rows.map(&:first)).index_by(&:id)
+    securities = Security.includes(:custom_instrument).where(id: rows.map(&:first)).index_by(&:id)
     rows.map { |security_id, first_date, lowest_qty| NegativePosition.new(securities[security_id], first_date, lowest_qty) }
-        .sort_by { |position| [ position.first_date, position.security.ticker, position.security.id ] }
+        .sort_by { |position| [ position.first_date, position.security.display_ticker, position.security.id ] }
   end
 
   # The balance type determines which "component" of balance is being tracked.

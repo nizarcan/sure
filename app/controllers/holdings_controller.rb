@@ -7,7 +7,7 @@ class HoldingsController < ApplicationController
   def index
     @account = accessible_accounts.find(params[:account_id])
     # Every row shows its average cost; load them together, not per row.
-    @current_holdings = @account.current_holdings.includes(:security).to_a
+    @current_holdings = @account.current_holdings.includes(security: :custom_instrument).to_a
     Holding.preload_avg_costs(@current_holdings)
     @trade_republic_categories = trade_republic_categories_for(@account)
   end
@@ -68,33 +68,48 @@ class HoldingsController < ApplicationController
   end
 
   def remap_security
-    # Combobox returns "TICKER|EXCHANGE|PROVIDER" format
-    parsed = Security.parse_combobox_id(params[:security_id])
+    # A custom instrument of this family is used as it is: its row is shared
+    # and already priced, so nothing is looked up or created for it. A custom
+    # id from another family (or one that no longer exists) is refused rather
+    # than turned into a provider-style security.
+    custom = Security.for_combobox(params[:security_id], family: Current.family)
+    if custom != :not_custom
+      if custom.nil?
+        flash[:alert] = t(".security_not_found")
+        redirect_to account_path(@holding.account, tab: "holdings")
+        return
+      end
 
-    # Validate ticker is present (form has required: true, but can be bypassed)
-    if parsed[:ticker].blank?
-      flash[:alert] = t(".security_not_found")
-      redirect_to account_path(@holding.account, tab: "holdings")
-      return
+      new_security = custom
+    else
+      # Combobox returns "TICKER|EXCHANGE|PROVIDER" format
+      parsed = Security.parse_combobox_id(params[:security_id])
+
+      # Validate ticker is present (form has required: true, but can be bypassed)
+      if parsed[:ticker].blank?
+        flash[:alert] = t(".security_not_found")
+        redirect_to account_path(@holding.account, tab: "holdings")
+        return
+      end
+
+      # The user explicitly selected this security from provider search results,
+      # so we use the combobox data directly — no need to re-resolve via provider APIs.
+      new_security = Security.find_or_initialize_by(
+        ticker: parsed[:ticker],
+        exchange_operating_mic: parsed[:exchange_operating_mic]
+      )
+
+      # Honor the user's provider choice (validated by model inclusion check on save)
+      new_security.price_provider = parsed[:price_provider] if parsed[:price_provider].present?
+
+      # Bring it online — user explicitly selected it from provider search results,
+      # so we know the provider can handle it.
+      new_security.offline = false
+      new_security.failed_fetch_count = 0
+      new_security.failed_fetch_at = nil
+
+      new_security.save!
     end
-
-    # The user explicitly selected this security from provider search results,
-    # so we use the combobox data directly — no need to re-resolve via provider APIs.
-    new_security = Security.find_or_initialize_by(
-      ticker: parsed[:ticker],
-      exchange_operating_mic: parsed[:exchange_operating_mic]
-    )
-
-    # Honor the user's provider choice (validated by model inclusion check on save)
-    new_security.price_provider = parsed[:price_provider] if parsed[:price_provider].present?
-
-    # Bring it online — user explicitly selected it from provider search results,
-    # so we know the provider can handle it.
-    new_security.offline = false
-    new_security.failed_fetch_count = 0
-    new_security.failed_fetch_at = nil
-
-    new_security.save!
 
     # The remap and the re-materialization with the new security's prices
     # commit together under the account row lock, taken first as a sync and a

@@ -15,6 +15,7 @@ class TradeImport < Import
           ticker: row.ticker,
           exchange_operating_mic: row.exchange_operating_mic
         )
+        raise MappingError, unresolvable_security_message(row) unless security
 
         Trade.new(
           security: security,
@@ -85,6 +86,11 @@ class TradeImport < Import
       qty.to_d.positive? ? "Buy" : "Sell"
     end
 
+    def unresolvable_security_message(row)
+      "Could not resolve security #{row.ticker.inspect} on row #{row.source_row_number}. " \
+        "A CUSTOM- ticker only resolves to this family's own custom instruments."
+    end
+
     def find_or_create_security(ticker: nil, exchange_operating_mic: nil)
       return nil unless ticker.present?
 
@@ -97,13 +103,33 @@ class TradeImport < Import
 
       return security if security.present?
 
-      security = Security::Resolver.new(
-        ticker,
-        exchange_operating_mic: exchange_operating_mic.presence
-      ).resolve
+      security = resolve_security(ticker, exchange_operating_mic)
 
       @security_cache[cache_key] = security
 
       security
+    end
+
+    # A custom instrument's security is stored under a CUSTOM-<uuid> ticker, so
+    # a row naming its symbol has to resolve through the family's instruments
+    # rather than the provider resolver. Another family's CUSTOM- id resolves to
+    # nothing: no row may attach to it.
+    def resolve_security(ticker, exchange_operating_mic)
+      if Security.custom_ticker?(ticker)
+        custom = Security.for_combobox(ticker, family: family)
+        return custom unless custom == :not_custom
+
+        return nil
+      end
+
+      if exchange_operating_mic.blank?
+        instrument = family.custom_instruments.active.find_by("UPPER(symbol) = ?", ticker.to_s.upcase)
+        return instrument.security if instrument
+      end
+
+      Security::Resolver.new(
+        ticker,
+        exchange_operating_mic: exchange_operating_mic.presence
+      ).resolve
     end
 end

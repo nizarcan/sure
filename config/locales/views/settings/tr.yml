@@ -4,6 +4,7 @@ tr:
     encryption_migration_guide: Şifreleme kurulumu ve geçiş kılavuzu
     settings_nav:
       accounts_label: Hesaplar
+      custom_instruments_label: Özel enstrümanlar
       advanced_section_title: Gelişmiş
       ai_prompts_label: Yapay Zeka İstemleri
       auto_matches_label: Otomatik Eşleştirme

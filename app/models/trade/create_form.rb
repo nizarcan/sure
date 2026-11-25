@@ -17,6 +17,13 @@ class Trade::CreateForm
 
   ACTIVITY_LABELS = SECURITY_TRADE_LABELS.merge(CASH_TRADE_LABELS).freeze
   TRANSFER_TYPES = %w[deposit withdrawal].freeze
+
+  # Units the user already owned before tracking them here. It books a
+  # Transfer trade at price 0: the units arrive without cash moving, and the
+  # lot cost can be set later from the holding. Kept out of ACTIVITY_LABELS
+  # and SUPPORTED_TYPES on purpose: the API's accepted types stay unchanged.
+  OPENING_TYPE = "transfer_in".freeze
+
   SUPPORTED_TYPES = (ACTIVITY_LABELS.keys + TRANSFER_TYPES).freeze
 
   attr_accessor :account, :date, :amount, :currency, :qty,
@@ -28,6 +35,8 @@ class Trade::CreateForm
     case type
     when *SECURITY_TRADE_LABELS.keys
       create_trade
+    when OPENING_TYPE
+      create_opening_trade
     when "dividend"
       create_dividend_income
     when "interest"
@@ -40,9 +49,32 @@ class Trade::CreateForm
   end
 
   private
-    # Users can either look up a ticker from a provider or enter a manual, "offline" ticker (that we won't fetch prices for)
+    # Resolves the security the entered ticker names. A custom instrument
+    # resolves only when it belongs to the account's family; a CUSTOM- id
+    # from another family resolves to nil rather than falling through to a
+    # provider lookup. An archived instrument resolves only for a disposal of
+    # units the account already holds.
     def security
-      parsed = ticker.present? ? Security.parse_combobox_id(ticker) : { ticker: manual_ticker }
+      return nil if ticker.blank? && manual_ticker.blank?
+
+      if ticker.present?
+        custom = Security.for_combobox(ticker, family: account.family)
+        return usable_custom_security(custom) unless custom == :not_custom
+
+        return resolve_provider_security(Security.parse_combobox_id(ticker))
+      end
+
+      instrument = matching_instrument(manual_ticker)
+      return usable_custom_security(instrument.security) if instrument
+
+      custom = Security.for_combobox(manual_ticker, family: account.family)
+      return usable_custom_security(custom) unless custom == :not_custom
+
+      resolve_provider_security(ticker: manual_ticker)
+    end
+
+    # Users can either look up a ticker from a provider or enter a manual, "offline" ticker (that we won't fetch prices for)
+    def resolve_provider_security(parsed)
       return nil if parsed[:ticker].blank?
 
       Security::Resolver.new(
@@ -52,6 +84,36 @@ class Trade::CreateForm
       ).resolve
     end
 
+    def usable_custom_security(security)
+      return nil unless security
+      return security unless security.custom_instrument&.archived?
+      return security if archived_disposal_allowed?(security)
+
+      nil
+    end
+
+    # Archiving hides an instrument from new purchases, but units already
+    # held must still be sellable (and dividends on them recordable), so a
+    # disposal may name an archived instrument the account holds or has
+    # traded.
+    def archived_disposal_allowed?(security)
+      return false unless %w[sell sweep_out dividend].include?(type)
+
+      account.holdings.exists?(security_id: security.id) || account.trades.exists?(security_id: security.id)
+    end
+
+    # A typed symbol (rather than a picked combobox option) names a custom
+    # instrument when it matches one of this family's symbols exactly,
+    # ignoring case. Archived instruments are matched too so the caller can
+    # refuse them rather than let the symbol fall through to a provider
+    # lookup that would create a second security under the same symbol.
+    def matching_instrument(value)
+      symbol = value.to_s.strip.upcase
+      return nil if symbol.blank?
+
+      account.family.custom_instruments.detect { |instrument| instrument.symbol.upcase == symbol }
+    end
+
     def ticker_present?
       ticker.present? || manual_ticker.present?
     end
@@ -59,18 +121,14 @@ class Trade::CreateForm
     def create_trade
       sec = security
 
-      unless sec
-        entry = account.entries.build(entryable: Trade.new)
-        entry.errors.add(:base, I18n.t("trades.form.trade_requires_security"))
-        return entry
-      end
+      return entry_with_error("trades.form.trade_requires_security") unless sec
 
       signed_qty = sell_side_trade? ? -qty.to_d.abs : qty.to_d.abs
       signed_amount = signed_qty * price.to_d + fee.to_d
       label = SECURITY_TRADE_LABELS.fetch(type)
 
       trade_entry = account.entries.new(
-        name: trade_name(label, signed_qty.abs, sec.ticker),
+        name: trade_name(label, signed_qty.abs, sec.display_ticker),
         date: date,
         amount: signed_amount,
         currency: currency,
@@ -92,39 +150,71 @@ class Trade::CreateForm
       trade_entry
     end
 
-    # Dividends are always a Trade. Security is required.
-    def create_dividend_income
-      unless ticker_present?
-        entry = account.entries.build(entryable: Trade.new)
-        entry.errors.add(:base, I18n.t("trades.form.dividend_requires_security"))
-        return entry
+    # "Add units already owned": a Transfer trade at price 0, so the units
+    # join the position and the account's cash stays where it is.
+    def create_opening_trade
+      sec = security
+
+      return entry_with_error("trades.form.trade_requires_security") unless sec
+
+      quantity = qty.to_d.abs
+      return entry_with_error("trades.form.qty_must_be_positive") unless quantity.positive?
+
+      trade_currency = currency.presence || account.currency
+
+      trade_entry = account.entries.new(
+        name: Trade.transfer_in_name(quantity, sec.display_ticker),
+        date: date,
+        amount: 0,
+        currency: trade_currency,
+        entryable: Trade.new(
+          qty: quantity,
+          price: 0,
+          fee: 0,
+          currency: trade_currency,
+          security: sec,
+          investment_activity_label: Trade::TRANSFER_LABEL
+        )
+      )
+
+      if trade_entry.save
+        trade_entry.lock_saved_attributes!
+        account.sync_later
       end
 
-      begin
-        sec = security
-        label = CASH_TRADE_LABELS.fetch("dividend")
-        create_income_trade(sec: sec, label: label, name: "#{label}: #{sec.ticker}")
-      rescue => e
-        Rails.logger.warn("Dividend security resolution failed: #{e.class} - #{e.message}")
-        entry = account.entries.build(entryable: Trade.new)
-        entry.errors.add(:base, I18n.t("trades.form.dividend_requires_security"))
-        entry
-      end
+      trade_entry
+    end
+
+    # Dividends are always a Trade. Security is required.
+    def create_dividend_income
+      sec = security
+
+      return entry_with_error("trades.form.dividend_requires_security") unless sec
+
+      label = CASH_TRADE_LABELS.fetch("dividend")
+      create_income_trade(sec: sec, label: label, name: "#{label}: #{sec.display_ticker}")
+    rescue => e
+      Rails.logger.warn("Dividend security resolution failed: #{e.class} - #{e.message}")
+      entry_with_error("trades.form.dividend_requires_security")
     end
 
     # Interest in an investment account is always a Trade.
     # Falls back to a synthetic cash security when none is selected.
     def create_interest_income
       sec = ticker_present? ? security : Security.cash_for(account, currency: currency)
+      return entry_with_error("trades.form.security_not_found") unless sec
+
       label = CASH_TRADE_LABELS.fetch("interest")
-      name = sec.cash? ? label : "#{label}: #{sec.ticker}"
+      name = sec.cash? ? label : "#{label}: #{sec.display_ticker}"
       create_income_trade(sec: sec, label: label, name: name)
     end
 
     def create_fee
       sec = ticker_present? ? security : Security.cash_for(account, currency: currency)
+      return entry_with_error("trades.form.security_not_found") unless sec
+
       label = CASH_TRADE_LABELS.fetch("fee")
-      name = sec.cash? ? label : "#{label}: #{sec.ticker}"
+      name = sec.cash? ? label : "#{label}: #{sec.display_ticker}"
       create_income_trade(sec: sec, label: label, name: name, amount_sign: 1)
     end
 
@@ -149,6 +239,12 @@ class Trade::CreateForm
         account.sync_later
       end
 
+      entry
+    end
+
+    def entry_with_error(message_key)
+      entry = account.entries.build(entryable: Trade.new)
+      entry.errors.add(:base, I18n.t(message_key))
       entry
     end
 

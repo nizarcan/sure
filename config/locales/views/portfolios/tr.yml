@@ -1,0 +1,6 @@
+---
+tr:
+  portfolios:
+    holdings:
+      columns:
+        cost_basis_per_unit: Birim başına maliyet

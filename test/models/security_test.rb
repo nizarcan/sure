@@ -430,4 +430,84 @@ class SecurityTest < ActiveSupport::TestCase
 
     assert_nil security.crypto_base_asset
   end
+
+  test "custom securities are a kind with a display ticker and no provider" do
+    family = families(:dylan_family)
+    instrument = family.custom_instruments.create!(name: "Gram gold", symbol: "SECTEST", currency: "USD", formula: "XAU")
+
+    security = instrument.security
+    assert_includes Security::KINDS, "custom"
+    assert security.custom?
+    assert_not security.cash?
+    assert Security.custom_ticker?(security.ticker)
+    assert_not Security.custom_ticker?("AAPL")
+    assert_equal "SECTEST", security.display_ticker
+    assert_equal "AAPL", securities(:aapl).display_ticker
+    assert_nil security.price_data_provider
+  end
+
+  test "find_by_ticker_and_exchange never returns a custom security" do
+    instrument = families(:dylan_family).custom_instruments.create!(
+      name: "Gram gold", symbol: "SECFIND", currency: "USD", formula: "XAU"
+    )
+
+    assert_nil Security.find_by_ticker_and_exchange(ticker: instrument.security.ticker)
+  end
+
+  test "for_combobox resolves only the family's own custom security" do
+    family = families(:dylan_family)
+    instrument = family.custom_instruments.create!(name: "Gram gold", symbol: "SECCOMBO", currency: "USD", formula: "XAU")
+    option = instrument.security.to_combobox_option
+
+    assert_equal "CUSTOM-", option.id[0, 7]
+    assert option.id.end_with?("||custom")
+    assert_equal "SECCOMBO", option.symbol
+    assert option.custom?
+    assert_equal "XAU", option.formula
+    assert_equal instrument.security, Security.for_combobox(option.id, family: family)
+    assert_nil Security.for_combobox(option.id, family: Family.create!(name: "Other"))
+    assert_equal :not_custom, Security.for_combobox("AAPL|XNAS|", family: family)
+  end
+
+  test "custom securities skip details, logos and provider pricing" do
+    instrument = families(:dylan_family).custom_instruments.create!(
+      name: "Gram gold", symbol: "SECSKIP", currency: "USD", formula: "XAU"
+    )
+    security = instrument.security
+    security.update_column(:logo_url, "https://example.com/logo.png")
+
+    assert_nil security.display_logo_url
+    security.expects(:import_brand_logo).never
+    security.import_provider_details
+    security.expects(:log_failed_price_fetch).never
+    assert_nil security.find_or_fetch_price
+  end
+
+  test "custom provider status and current price come from stored prices" do
+    instrument = families(:dylan_family).custom_instruments.create!(
+      name: "Gram gold", symbol: "SECSTATUS", currency: "USD", formula: "XAU"
+    )
+    ExchangeRate.create!(from_currency: "XAU", to_currency: "USD", date: Date.current, rate: 3000)
+    security = instrument.security
+    Security::Price.create!(security: security, date: Date.current, price: 100, currency: "USD")
+
+    assert_equal :ok, security.provider_status
+    assert_equal Money.new(100, "USD"), security.current_price
+
+    security.prices.delete_all
+    Security::Price.create!(security: security, date: 6.days.ago.to_date, price: 90, currency: "USD")
+    assert_equal :stale, security.provider_status
+    assert_equal Money.new(90, "USD"), security.find_or_fetch_price(date: Date.current).then { |price| Money.new(price.price, price.currency) }
+  end
+
+  test "custom import_provider_prices always returns a two element tuple" do
+    instrument = families(:dylan_family).custom_instruments.create!(
+      name: "Gram gold", symbol: "SECIMPORT", currency: "USD", formula: "XAU"
+    )
+    CustomInstrument.any_instance.expects(:import_prices)
+                              .with(start_date: Date.current, end_date: Date.current, clear_cache: false)
+                              .returns([ 2, nil ])
+
+    assert_equal [ 2, nil ], instrument.security.import_provider_prices(start_date: Date.current, end_date: Date.current)
+  end
 end

@@ -16,7 +16,7 @@ end
 
 json.security do
   json.id holding.security.id
-  json.ticker holding.security.ticker
+  json.ticker holding.security.display_ticker
   json.name holding.security.name
 end
 

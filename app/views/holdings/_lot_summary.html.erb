@@ -3,7 +3,7 @@
 <span class="text-secondary">
   <%= lot.opening? ? t("holdings.lots.opening") : l(lot.acquired_on, format: :long) %>
   &middot;
-  <span class="privacy-sensitive"><%= t("holdings.holding.shares", qty: format_quantity(lot.qty, exact: true)) %></span>
+  <span class="privacy-sensitive"><%= lot.security.custom? ? t("holdings.holding.units", qty: format_quantity(lot.qty, exact: true), symbol: lot.security.display_ticker) : t("holdings.holding.shares", qty: format_quantity(lot.qty, exact: true)) %></span>
 </span>
 <span class="text-primary flex items-center gap-1">
   <span class="privacy-sensitive">

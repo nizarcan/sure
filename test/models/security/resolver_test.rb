@@ -658,6 +658,15 @@ class Security::ResolverTest < ActiveSupport::TestCase
     assert_equal "resolution_pending", placeholder.offline_reason
   end
 
+  test "returns nil for a custom instrument ticker without searching providers" do
+    family = families(:dylan_family)
+    instrument = family.custom_instruments.create!(name: "Gram gold", symbol: "RESCUSTOM", currency: "USD", formula: "XAU")
+
+    Security.expects(:search_provider).never
+
+    assert_nil Security::Resolver.new(instrument.security.ticker).resolve
+  end
+
   private
     def stub_listed_search(symbol, match_ticker: symbol)
       provider = mock("listed_provider")

@@ -136,18 +136,27 @@ class TradesController < ApplicationController
         update_params[:entryable_attributes][:qty] = qty
         update_params[:amount] = qty * price.to_d + fee_val
 
-        # Sync investment_activity_label with Buy/Sell type if not explicitly set to something else
-        # Check both the submitted param and the existing record's label
-        current_label = update_params[:entryable_attributes][:investment_activity_label].presence ||
-                        @entry.trade&.investment_activity_label
-        if current_label.blank? || current_label == "Buy" || current_label == "Sell"
-          update_params[:entryable_attributes][:investment_activity_label] = is_sell ? "Sell" : "Buy"
-        end
+        trade = @entry.trade
+        ticker = trade&.security&.display_ticker
 
-        # Update entry name to reflect Buy/Sell change
-        ticker = @entry.trade&.security&.ticker
-        if ticker.present?
-          update_params[:name] = Trade.build_name(is_sell ? "sell" : "buy", qty.abs, ticker)
+        # A movement of units already owned carries price 0 and says so; an
+        # edit to its quantity must not turn it into a purchase. The label
+        # (Transfer) is left as it is by the inference below.
+        if trade&.internal_movement? && trade.price.to_d.zero? && price.to_d.zero?
+          update_params[:name] = Trade.transfer_in_name(qty.abs, ticker) if ticker.present?
+        else
+          # Sync investment_activity_label with Buy/Sell type if not explicitly set to something else
+          # Check both the submitted param and the existing record's label
+          current_label = update_params[:entryable_attributes][:investment_activity_label].presence ||
+                          @entry.trade&.investment_activity_label
+          if current_label.blank? || current_label == "Buy" || current_label == "Sell"
+            update_params[:entryable_attributes][:investment_activity_label] = is_sell ? "Sell" : "Buy"
+          end
+
+          # Update entry name to reflect Buy/Sell change
+          if ticker.present?
+            update_params[:name] = Trade.build_name(is_sell ? "sell" : "buy", qty.abs, ticker)
+          end
         end
       end
 

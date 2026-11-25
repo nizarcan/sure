@@ -3,6 +3,7 @@ require "ostruct"
 
 class MarketDataImporterTest < ActiveSupport::TestCase
   include ProviderTestHelper
+  include CustomInstrumentTestHelper
 
   SECURITY_PRICE_BUFFER     = Security::Price::Importer::PROVISIONAL_LOOKBACK_DAYS.days
   EXCHANGE_RATE_BUFFER      = 5.days
@@ -263,6 +264,48 @@ class MarketDataImporterTest < ActiveSupport::TestCase
     MarketDataImporter.new(mode: :snapshot).import_security_prices
 
     assert_equal 1, Security::Price.where(security: security, date: snapshot_start_date).count
+  end
+
+  test "prices a held custom instrument through the ordinary held-window loop" do
+    family = Family.create!(name: "Custom", currency: "USD")
+    instrument = create_custom_instrument(family: family, symbol: "MDCUSTOM", formula: "1 * USD")
+    account = family.accounts.create!(name: "Brokerage", currency: "USD", balance: 0, accountable: Investment.new)
+    account.holdings.create!(security: instrument.security, date: Date.current, qty: 1, price: 1, amount: 1, currency: "USD")
+
+    @provider.expects(:fetch_security_prices).never
+    @provider.expects(:fetch_security_info).never
+
+    MarketDataImporter.new(mode: :full).import_security_prices
+
+    assert Security::Price.where(security: instrument.security).exists?
+  end
+
+  test "prices a held custom instrument through the held-window loop without a securities provider" do
+    family = Family.create!(name: "Custom only", currency: "USD")
+    instrument = create_custom_instrument(family: family, symbol: "MDNOPROV", formula: "1 * USD")
+    account = family.accounts.create!(name: "Brokerage", currency: "USD", balance: 0, accountable: Investment.new)
+    account.holdings.create!(security: instrument.security, date: Date.current, qty: 1, price: 1, amount: 1, currency: "USD")
+
+    Security.stubs(:providers).returns([])
+
+    MarketDataImporter.new(mode: :full).import_security_prices
+
+    assert Security::Price.where(security: instrument.security).exists?
+  end
+
+  test "import_all prices active custom instruments even with no securities provider" do
+    family = Family.create!(name: "Custom only", currency: "USD")
+    stock = Security.create!(ticker: "CSTOCK", exchange_operating_mic: "XNAS")
+    Security::Price.create!(security: stock, date: snapshot_start_date, price: 10, currency: "USD")
+    instrument = create_custom_instrument(family: family, symbol: "MDACTIVE", formula: "1 * [CSTOCK]")
+
+    Security.stubs(:providers).returns([])
+    ExchangeRate.stubs(:provider).returns(nil)
+    Security.any_instance.stubs(:import_provider_prices).returns([ 0, nil ])
+
+    MarketDataImporter.new(mode: :snapshot).import_all
+
+    assert Security::Price.where(security: instrument.security, date: snapshot_start_date).exists?
   end
 
   private

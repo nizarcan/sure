@@ -29,9 +29,10 @@
               <% else %>
                 <%= render DS::FilledIcon.new(
                   variant: :text,
-                  text: trade.security&.ticker || entry.name,
+                  text: trade.security&.display_ticker || entry.name,
                   size: "lg",
-                  rounded: true
+                  rounded: true,
+                  text_length: trade.security&.custom? ? 2 : 1
                 ) %>
               <% end %>
             </div>

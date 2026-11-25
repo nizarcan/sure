@@ -77,6 +77,21 @@ class Api::V1::HoldingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @holding.id, response_data["id"]
   end
 
+  test "shows a custom holding by its instrument symbol" do
+    instrument = @family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "USD", formula: "2 * USD"
+    )
+    holding = @account.holdings.create!(
+      security: instrument.security, date: Date.current, qty: 4, price: 10, amount: 40, currency: "USD"
+    )
+
+    get api_v1_holding_url(holding), headers: api_headers(@api_key)
+
+    assert_response :success
+    response_data = JSON.parse(response.body)
+    assert_equal "GRAU", response_data.dig("security", "ticker")
+  end
+
   test "returns not found for an inaccessible holding" do
     get api_v1_holding_url(@private_holding), headers: api_headers(@api_key)
 

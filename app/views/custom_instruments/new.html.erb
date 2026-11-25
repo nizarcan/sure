@@ -1,0 +1,10 @@
+<%= render DS::Dialog.new(width: "lg") do |dialog| %>
+  <% dialog.with_header(title: t(".title")) %>
+  <% dialog.with_body do %>
+    <%= render "form",
+          instrument: @instrument,
+          templates: @templates,
+          selected_template: @selected_template,
+          new_record: true %>
+  <% end %>
+<% end %>

@@ -9,7 +9,7 @@ json.provisional security_price.provisional
 
 json.security do
   json.id security_price.security.id
-  json.ticker security_price.security.ticker
+  json.ticker security_price.security.display_ticker
   json.name security_price.security.name
   json.exchange_operating_mic security_price.security.exchange_operating_mic
 end

@@ -66,15 +66,17 @@ class Account::MarketDataImporter
   end
 
   def import_security_prices
-    return unless Security.provider
-
     return if price_windows.empty?
 
+    provider_available = Security.provider.present?
     securities = Security.online.where(id: price_windows.keys).index_by(&:id)
 
     price_windows.each do |security_id, window|
       security = securities[security_id]
       next unless security
+      # A custom instrument is priced from other securities and rates, so it
+      # has no securities provider of its own but still belongs here.
+      next unless provider_available || security.custom?
 
       security.import_provider_prices(start_date: window.start_date, end_date: window.end_date)
       security.import_provider_details

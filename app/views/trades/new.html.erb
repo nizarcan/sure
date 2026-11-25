@@ -1,5 +1,8 @@
 <%= render DS::Dialog.new do |dialog| %>
-  <% dialog.with_header(title: t(".title")) %>
+  <% submitted = params[:model].is_a?(ActionController::Parameters) ? params[:model] : {} %>
+  <% type = params[:type].presence || submitted[:type].presence %>
+  <% title_key = type == Trade::CreateForm::OPENING_TYPE ? ".title_transfer_in" : ".title" %>
+  <% dialog.with_header(title: t(title_key)) %>
   <% dialog.with_body do %>
     <%= render "trades/form", model: @model, account: @account %>
   <% end %>

@@ -38,6 +38,7 @@ class Security::ManualPriceImport
     # assigns a provider, or another import, cannot slip in between.
     security.with_lock do
       raise Invalid.new([ error(nil, "prices cannot be imported for a cash position") ]) if security.cash?
+      raise Invalid.new([ error(nil, "prices cannot be imported for a custom instrument") ]) if security.custom?
       raise Invalid.new([ error(nil, "prices can only be imported for a security no provider tracks") ]) unless untracked?
       # Every bad row is reported at once: a row that parsed can still carry
       # the wrong currency beside one that did not parse.

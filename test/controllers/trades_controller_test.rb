@@ -3,6 +3,7 @@ require "test_helper"
 class TradesControllerTest < ActionDispatch::IntegrationTest
   include EntryableResourceInterfaceTest, EntriesTestHelper
   include GoalPledgeTestHelper
+  include CustomInstrumentTestHelper
 
   setup do
     sign_in @user = users(:family_admin)
@@ -596,6 +597,309 @@ class TradesControllerTest < ActionDispatch::IntegrationTest
     }
 
     assert_equal "open", pledge.reload.status
+  end
+
+  # ------------------------------------------------ custom instruments
+
+  test "creates a buy for a custom instrument picked in the combobox" do
+    instrument = create_custom_instrument(family: @entry.account.family)
+
+    assert_difference [ "Entry.count", "Trade.count" ], 1 do
+      post trades_url(account_id: @entry.account_id), params: {
+        model: {
+          type: "buy",
+          date: Date.current,
+          ticker: instrument.security.to_combobox_option.id,
+          qty: 10,
+          price: 20,
+          currency: "USD"
+        }
+      }
+    end
+
+    created_entry = Entry.order(created_at: :desc).first
+    assert_equal instrument.security, created_entry.trade.security
+    assert_equal "Buy 10.0 shares of GRAU", created_entry.name
+    assert_redirected_to account_url(created_entry.account)
+  end
+
+  test "adds units already owned without moving cash and values them at market" do
+    family = @entry.account.family
+    account = family.accounts.create!(
+      name: "Opening units", currency: "USD", balance: 0, cash_balance: 0, accountable: Investment.new
+    )
+    instrument = create_custom_instrument(family: family)
+    Security::Price.create!(security: instrument.security, date: Date.current, price: 25, currency: "USD")
+
+    account.entries.create!(name: "Deposit", date: Date.current, amount: -1000, currency: "USD", entryable: Transaction.new)
+    Balance::Materializer.new(account, strategy: :forward).materialize_balances
+    assert_equal 1000, account.reload.cash_balance.to_d
+
+    assert_difference "Trade.count", 1 do
+      post trades_url(account_id: account.id), params: {
+        model: {
+          type: Trade::CreateForm::OPENING_TYPE,
+          date: Date.current,
+          qty: 10,
+          currency: "USD",
+          ticker: instrument.security.to_combobox_option.id
+        }
+      }
+    end
+
+    assert_redirected_to account_url(account)
+    created_entry = account.entries.where(entryable_type: "Trade").order(:created_at).last
+    assert_equal "Added 10 units of GRAU", created_entry.name
+    assert_equal 0, created_entry.amount.to_d
+    assert_equal Trade::TRANSFER_LABEL, created_entry.trade.investment_activity_label
+
+    Balance::Materializer.new(account.reload, strategy: :forward).materialize_balances
+
+    holding = account.holdings.find_by!(security: instrument.security, date: Date.current)
+    assert_equal BigDecimal("10"), holding.qty
+    assert_equal BigDecimal("250"), holding.amount.to_d
+    assert_equal 1000, account.reload.cash_balance.to_d, "units already owned must not move cash"
+  end
+
+  test "rejects another family's custom instrument id and re-renders the form" do
+    foreign = create_custom_instrument(family: families(:empty), symbol: "FOREIGN")
+
+    assert_no_difference [ "Entry.count", "Trade.count" ] do
+      post trades_url(account_id: @entry.account_id), params: {
+        model: {
+          type: "buy",
+          date: Date.current,
+          ticker: foreign.security.to_combobox_option.id,
+          qty: 1,
+          price: 10,
+          currency: "USD"
+        }
+      }
+    end
+
+    assert_response :unprocessable_entity
+    assert_select "form[action=?]", trades_path(account_id: @entry.account_id)
+  end
+
+  test "rejects an archived custom instrument" do
+    instrument = create_custom_instrument(family: @entry.account.family)
+    instrument.archive!
+
+    assert_no_difference [ "Entry.count", "Trade.count" ] do
+      post trades_url(account_id: @entry.account_id), params: {
+        model: {
+          type: "buy",
+          date: Date.current,
+          ticker: instrument.security.to_combobox_option.id,
+          qty: 1,
+          price: 10,
+          currency: "USD"
+        }
+      }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  test "a typed symbol resolves to the family's custom instrument" do
+    instrument = create_custom_instrument(family: @entry.account.family)
+
+    assert_difference "Trade.count", 1 do
+      post trades_url(account_id: @entry.account_id), params: {
+        model: {
+          type: "buy",
+          date: Date.current,
+          manual_ticker: "grau",
+          qty: 1,
+          price: 10,
+          currency: "USD"
+        }
+      }
+    end
+
+    assert_equal instrument.security, Entry.order(created_at: :desc).first.trade.security
+  end
+
+  test "the new form preselects a family custom instrument" do
+    instrument = create_custom_instrument(family: @entry.account.family)
+    id = instrument.security.to_combobox_option.id
+
+    get new_trade_url(account_id: @entry.account_id, security: id, type: Trade::CreateForm::OPENING_TYPE)
+
+    assert_response :success
+    assert_select "input[type=hidden][name='model[ticker]'][value=?]", id
+    assert_select "fieldset[data-hw-combobox-prefilled-display-value=?]", "GRAU - Gram gold"
+  end
+
+  test "the new form ignores a custom instrument from another family" do
+    create_custom_instrument(family: @entry.account.family, symbol: "OWN")
+    foreign = create_custom_instrument(family: families(:empty), symbol: "FOREIGN")
+
+    get new_trade_url(
+      account_id: @entry.account_id,
+      security: foreign.security.to_combobox_option.id,
+      type: Trade::CreateForm::OPENING_TYPE
+    )
+
+    assert_response :success
+    assert_select "input[type=hidden][name='model[ticker]'][value=?]", foreign.security.to_combobox_option.id, count: 0
+    fieldset = css_select("fieldset.hw-combobox").first
+    assert fieldset, "expected the security combobox"
+    assert_nil fieldset["data-hw-combobox-prefilled-display-value"]
+  end
+
+  test "a rejected transfer_in re-renders the form with the entered quantity" do
+    instrument = create_custom_instrument(family: @entry.account.family)
+    id = instrument.security.to_combobox_option.id
+
+    post trades_url(account_id: @entry.account_id), params: {
+      model: { type: Trade::CreateForm::OPENING_TYPE, date: Date.current, qty: 0, currency: "USD", ticker: id }
+    }
+
+    assert_response :unprocessable_entity
+    assert_select "select[name='model[type]'] option[selected][value=?]", Trade::CreateForm::OPENING_TYPE
+    assert_select "input[name='model[qty]'][value=?]", "0"
+    assert_select "input[type=hidden][name='model[ticker]'][value=?]", id
+    assert_select "p", text: I18n.t("trades.form.qty_must_be_positive")
+  end
+
+  test "the transfer_in form shows quantity but not price or fee" do
+    instrument = create_custom_instrument(family: @entry.account.family)
+    id = instrument.security.to_combobox_option.id
+
+    get new_trade_url(account_id: @entry.account_id, security: id, type: Trade::CreateForm::OPENING_TYPE)
+
+    assert_response :success
+    assert_select "input[name='model[qty]']", count: 1
+    assert_select "input[name='model[price]']", count: 0
+    assert_select "input[name='model[fee]']", count: 0
+    assert_select "input[type=hidden][name='model[currency]'][value=?]", @entry.account.currency
+    assert_select "select[name='model[type]'] option[value=?]", Trade::CreateForm::OPENING_TYPE
+    assert_select "p", text: I18n.t("trades.form.transfer_in_hint")
+  end
+
+  test "switching type keeps the preselected instrument and account in the URL" do
+    instrument = create_custom_instrument(family: @entry.account.family)
+    id = instrument.security.to_combobox_option.id
+
+    get new_trade_url(account_id: @entry.account_id, security: id, type: "buy")
+
+    assert_response :success
+    select = css_select("select[name='model[type]']").first
+    url_param = select["data-trade-form-url-param"]
+    assert_includes url_param, "security="
+    assert_includes url_param, "account_id=#{@entry.account_id}"
+  end
+
+  test "a preselected custom instrument labels the price per unit and hints at the current price" do
+    instrument = create_custom_instrument(family: @entry.account.family)
+    Security::Price.create!(security: instrument.security, date: Date.current, price: 123.45, currency: "USD")
+    id = instrument.security.to_combobox_option.id
+
+    get new_trade_url(account_id: @entry.account_id, security: id, type: "buy")
+
+    assert_response :success
+    assert_select "label", text: /#{Regexp.escape(I18n.t("trades.form.price_per_unit"))}/
+    assert_select "p", text: /#{Regexp.escape(I18n.t("trades.form.current_price_hint", price: "").strip)}.*123\.45/
+    assert_equal "", css_select("input[name='model[price]']").first["value"].to_s
+  end
+
+  test "the current-price hint is left out when the price is in another currency" do
+    instrument = create_custom_instrument(family: @entry.account.family)
+    Security::Price.create!(security: instrument.security, date: Date.current, price: 123.45, currency: "EUR")
+    id = instrument.security.to_combobox_option.id
+
+    get new_trade_url(account_id: @entry.account_id, security: id, type: "buy")
+
+    assert_response :success
+    assert_select "p", text: /#{Regexp.escape(I18n.t("trades.form.current_price_hint", price: "").strip)}/, count: 0
+  end
+
+  test "editing the quantity of an added-units trade keeps its transfer wording" do
+    instrument = create_custom_instrument(family: @entry.account.family, symbol: "CEYREK")
+    entry = Trade::CreateForm.new(
+      account: @entry.account,
+      type: Trade::CreateForm::OPENING_TYPE,
+      date: Date.current,
+      qty: 10,
+      currency: "USD",
+      ticker: instrument.security.to_combobox_option.id
+    ).create
+    assert entry.persisted?, entry.errors.full_messages.to_sentence
+
+    patch trade_url(entry), params: {
+      entry: {
+        nature: "outflow",
+        entryable_attributes: { id: entry.entryable_id, qty: 12, price: 0, fee: 0 }
+      }
+    }
+
+    assert_redirected_to account_url(@entry.account)
+    entry.reload
+    assert_equal "Added 12 units of CEYREK", entry.name
+    assert_equal Trade::TRANSFER_LABEL, entry.trade.investment_activity_label
+    assert_equal 0, entry.amount.to_d
+    assert_equal BigDecimal("12"), entry.trade.qty
+  end
+
+  test "a tampered model param does not break the new trade form" do
+    instrument = create_custom_instrument(family: @entry.account.family)
+    id = instrument.security.to_combobox_option.id
+
+    get new_trade_url(account_id: @entry.account_id, security: id, type: "buy", model: "not-a-hash")
+
+    assert_response :success
+    assert_select "form[data-controller='trade-form']"
+  end
+
+  test "the new form preselects an archived instrument for a sale" do
+    instrument = create_custom_instrument(family: @entry.account.family, symbol: "ARCHD")
+    instrument.archive!
+    id = instrument.security.to_combobox_option.id
+
+    get new_trade_url(account_id: @entry.account_id, security: id, type: "sell")
+
+    assert_response :success
+    assert_select "fieldset[data-hw-combobox-prefilled-display-value=?]", "ARCHD - Gram gold"
+  end
+
+  test "the trade header shows the instrument symbol" do
+    instrument = create_custom_instrument(family: @entry.account.family)
+    entry = Trade::CreateForm.new(
+      account: @entry.account,
+      type: "buy",
+      date: Date.current,
+      qty: 1,
+      price: 10,
+      currency: "USD",
+      ticker: instrument.security.to_combobox_option.id
+    ).create
+
+    get trade_url(entry)
+
+    assert_response :success
+    assert_includes response.body, "GRAU"
+    assert_not_includes response.body, "CUSTOM-"
+  end
+
+  test "the header hides purchase price and return for an unpriced internal movement" do
+    instrument = create_custom_instrument(family: @entry.account.family)
+    entry = Trade::CreateForm.new(
+      account: @entry.account,
+      type: Trade::CreateForm::OPENING_TYPE,
+      date: Date.current,
+      qty: 10,
+      currency: "USD",
+      ticker: instrument.security.to_combobox_option.id
+    ).create
+
+    get trade_url(entry)
+
+    assert_response :success
+    assert_select "dt", text: I18n.t("trades.header.purchase_qty_label")
+    assert_select "dt", text: I18n.t("trades.header.purchase_price_label"), count: 0
+    assert_select "dt", text: I18n.t("trades.header.total_return_label"), count: 0
+    assert_select "span.text-secondary.text-sm", text: I18n.t("trades.header.transfer")
   end
 
   private

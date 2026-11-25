@@ -15,7 +15,7 @@ class Api::V1::TradesController < Api::V1::BaseController
     trades_query = family.trades.visible
 
     trades_query = apply_filters(accessible_trades)
-    trades_query = trades_query.includes({ entry: :account }, :security, :category, :lot_source_entry).reverse_chronological
+    trades_query = trades_query.includes({ entry: :account }, { security: :custom_instrument }, :category, :lot_source_entry).reverse_chronological
 
     @pagy, @trades = pagy(
       trades_query,
@@ -231,7 +231,7 @@ class Api::V1::TradesController < Api::V1::BaseController
       signed_qty = is_sell ? -qty : qty
       entry_params[:entryable_attributes].merge!(qty: signed_qty, price: price)
       entry_params[:amount] = signed_qty * price + @trade.fee
-      ticker = @trade.security&.ticker
+      ticker = @trade.security&.display_ticker
       entry_params[:name] = Trade.build_name(is_sell ? "sell" : "buy", qty, ticker) if ticker.present?
       type_label = Trade::CreateForm::SECURITY_TRADE_LABELS[flat[:type].to_s.downcase]
       entry_params[:entryable_attributes][:investment_activity_label] = flat[:investment_activity_label].presence || type_label || @trade.label_for_side(sell: is_sell)
@@ -293,7 +293,7 @@ class Api::V1::TradesController < Api::V1::BaseController
         ticker_value = nil
         manual_ticker_value = nil
         if trade_params[:security_id].present?
-          security = Security.find(trade_params[:security_id])
+          security = find_trade_security!(trade_params[:security_id])
           ticker_value = ticker_from_security(security)
         elsif trade_params[:ticker].present?
           ticker_value = trade_params[:ticker]
@@ -329,7 +329,7 @@ class Api::V1::TradesController < Api::V1::BaseController
       end
 
       if trade_params[:security_id].present?
-        security = Security.find(trade_params[:security_id])
+        security = find_trade_security!(trade_params[:security_id])
         ticker_value = ticker_from_security(security)
       elsif trade_params[:ticker].present?
         ticker_value = trade_params[:ticker]
@@ -369,7 +369,7 @@ class Api::V1::TradesController < Api::V1::BaseController
       end
 
       if trade_params[:security_id].present?
-        security = Security.find(trade_params[:security_id])
+        security = find_trade_security!(trade_params[:security_id])
         ticker_value = ticker_from_security(security)
       elsif trade_params[:ticker].present?
         ticker_value = trade_params[:ticker]
@@ -454,9 +454,23 @@ class Api::V1::TradesController < Api::V1::BaseController
     end
 
     def ticker_from_security(security)
+      # A custom security's combobox id is its CUSTOM-<uuid> ticker; the trade
+      # form resolves it through Security.for_combobox, which knows the symbol.
+      return security.ticker if security.custom?
       return security.ticker if security.exchange_operating_mic.blank?
 
       "#{security.ticker}|#{security.exchange_operating_mic}"
+    end
+
+    # Only the family's own custom securities are attachable by id. Every
+    # standard or cash security is shared, but another family's custom one is
+    # a 404 so a trade can never point at it.
+    def find_trade_security!(id)
+      security = Security.find(id)
+      return security unless security.custom?
+      return security if security.custom_instrument&.family_id == current_resource_owner.family_id
+
+      raise ActiveRecord::RecordNotFound, "Security not found"
     end
 
     # A deposit or withdrawal also books an entry on the other account, so it

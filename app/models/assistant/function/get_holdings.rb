@@ -79,7 +79,7 @@ class Assistant::Function::GetHoldings < Assistant::Function
         },
         securities: {
           type: "array",
-          description: "Filter holdings by security ticker symbol",
+          description: "Filter holdings by security ticker symbol (a custom instrument's symbol for custom holdings)",
           items: { enum: family_security_tickers },
           minItems: 1,
           uniqueItems: true
@@ -93,7 +93,7 @@ class Assistant::Function::GetHoldings < Assistant::Function
 
     ordered_holdings = holdings_query.order(amount: :desc)
     pagy = Pagy.new(count: ordered_holdings.count, page: resolved_page(params), limit: default_page_size)
-    paginated_holdings = ordered_holdings.includes(:security, :account).offset(pagy.offset).limit(pagy.limit)
+    paginated_holdings = ordered_holdings.includes({ security: :custom_instrument }, :account).offset(pagy.offset).limit(pagy.limit)
 
     total_value = holdings_query.sum(:amount)
 
@@ -102,7 +102,7 @@ class Assistant::Function::GetHoldings < Assistant::Function
 
     normalized_holdings = paginated_holdings.map do |holding|
       {
-        ticker: holding.ticker,
+        ticker: holding.security.display_ticker,
         name: holding.name,
         quantity: holding.qty.to_f,
         price: holding.price.to_f,
@@ -163,7 +163,12 @@ class Assistant::Function::GetHoldings < Assistant::Function
         )
 
       if params["securities"].present?
-        holdings = holdings.joins(:security).where(securities: { ticker: params["securities"] })
+        securities = Array(params["securities"]).map { |value| value.to_s.strip }
+        holdings = holdings.joins(:security).where(
+          "securities.ticker IN (:tickers) OR securities.id IN (:custom_security_ids)",
+          tickers: securities,
+          custom_security_ids: family.custom_instruments.where("UPPER(symbol) IN (?)", securities.map(&:upcase)).select(:security_id)
+        )
       end
 
       holdings
@@ -181,6 +186,9 @@ class Assistant::Function::GetHoldings < Assistant::Function
       @family_security_tickers ||= Security
         .where(id: Holding.where(account_id: investment_accounts.select(:id)).select(:security_id))
         .distinct
-        .pluck(:ticker)
+        .includes(:custom_instrument)
+        .map(&:display_ticker)
+        .uniq
+        .sort
     end
 end

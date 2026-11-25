@@ -1,0 +1,135 @@
+<%# locals: (instrument:, templates: [], selected_template: nil, new_record: true, affected_account_count: 0) %>
+
+<%
+  chips = custom_instrument_chips(instrument)
+  template_payload = templates.map do |template|
+    { key: template.key.to_s, name: template.name, symbol: template.symbol, formula: template.formula }
+  end
+%>
+
+<div data-controller="custom-instrument-form"
+     data-custom-instrument-form-templates-value="<%= template_payload.to_json %>"
+     data-custom-instrument-form-preview-url-value="<%= preview_custom_instruments_path %>"
+     data-custom-instrument-form-instrument-id-value="<%= instrument.id %>"
+     data-custom-instrument-form-error-text-value="<%= t(".preview_error") %>"
+     data-custom-instrument-form-busy-class="opacity-60">
+  <%= styled_form_with model: instrument, class: "space-y-4" do |form| %>
+    <% if instrument.errors.any? %>
+      <%= render "shared/form_errors", model: instrument %>
+    <% end %>
+
+    <% if new_record %>
+      <div class="form-field">
+        <%= label_tag :template, t(".template"), class: "form-field__label" %>
+        <%= select_tag :template,
+              options_for_select(templates.map { |template| [ template.name, template.key ] }, selected_template&.key),
+              include_blank: t(".template_blank"),
+              class: "form-field__input",
+              data: { action: "change->custom-instrument-form#applyTemplate" } %>
+        <p class="text-xs text-secondary px-1"><%= t(".template_hint") %></p>
+      </div>
+    <% end %>
+
+    <div class="space-y-1">
+      <div class="grid gap-4 sm:grid-cols-2 sm:items-start">
+        <%= form.text_field :name,
+              label: t(".name"),
+              required: true,
+              data: { custom_instrument_form_target: "name" } %>
+
+        <%= form.text_field :symbol,
+              label: t(".symbol"),
+              required: true,
+              class: "form-field__input font-mono uppercase",
+              autocomplete: "off",
+              data: { custom_instrument_form_target: "symbol" } %>
+      </div>
+      <p class="text-xs text-secondary px-1"><%= t(".symbol_hint") %></p>
+    </div>
+
+    <%= form.select :currency,
+          custom_instrument_currency_options(instrument),
+          { label: t(".currency") },
+          data: {
+            custom_instrument_form_target: "currency",
+            action: "change->custom-instrument-form#schedulePreview"
+          } %>
+
+    <%= form.text_area :formula,
+          label: t(".formula"),
+          rows: 3,
+          required: true,
+          spellcheck: false,
+          autocomplete: "off",
+          class: "form-field__input font-mono",
+          data: {
+            custom_instrument_form_target: "formula",
+            action: "input->custom-instrument-form#schedulePreview"
+          } %>
+
+    <div class="space-y-2">
+      <p class="text-xs font-medium text-secondary"><%= t(".chips_label") %></p>
+      <div class="flex flex-wrap gap-1.5">
+        <% chips.each do |chip| %>
+          <%= render DS::Button.new(
+                text: chip,
+                variant: :secondary,
+                size: :sm,
+                type: :button,
+                title: t(".insert_chip", chip: chip),
+                aria: { label: t(".insert_chip", chip: chip) },
+                data: { action: "click->custom-instrument-form#insertToken", custom_instrument_form_token: chip }
+              ) %>
+        <% end %>
+      </div>
+    </div>
+
+    <div class="space-y-2">
+      <p class="text-xs font-medium text-secondary"><%= t(".preview_title") %></p>
+      <div id="custom_instrument_preview"
+           class="rounded-lg bg-container-inset p-3"
+           aria-live="polite"
+           aria-busy="false"
+           data-custom-instrument-form-target="preview">
+        <p class="text-xs text-secondary"><%= t(".preview_placeholder") %></p>
+      </div>
+    </div>
+
+    <div class="form-field combobox"
+         data-action="hw-combobox:selection->custom-instrument-form#insertSecurity">
+      <%= hw_combobox_tag :security_lookup,
+            securities_path(country_code: Current.family.country, exclude_custom: 1),
+            label: t(".insert_security"),
+            placeholder: t(".insert_security_placeholder") %>
+    </div>
+
+    <%= form.text_area :description,
+          label: t(".description"),
+          rows: 2 %>
+
+    <% unless new_record %>
+      <div class="hidden"
+           data-custom-instrument-form-target="historyWarning"
+           data-custom-instrument-form-saved-formula-value="<%= instrument.formula_in_database %>"
+           data-custom-instrument-form-saved-currency-value="<%= instrument.currency_in_database %>">
+        <%= render DS::Alert.new(
+              variant: :warning,
+              message: t(".history_warning", count: affected_account_count)
+            ) %>
+      </div>
+    <% end %>
+
+    <%= render DS::Disclosure.new(title: t(".help_title"), align: :left, variant: :card_inset) do %>
+      <ul class="list-disc space-y-1 pl-4 text-xs text-secondary">
+        <li><%= t(".help.operators") %></li>
+        <li><%= t(".help.percent") %></li>
+        <li><%= t(".help.security") %></li>
+        <li><%= t(".help.premium") %></li>
+        <li><%= t(".help.fixed_amount") %></li>
+        <li><%= t(".help.troy_ounce") %></li>
+      </ul>
+    <% end %>
+
+    <%= form.submit new_record ? t(".create") : t(".save") %>
+  <% end %>
+</div>

@@ -43,6 +43,10 @@
   <% end %>
 
   <% trade = entry.trade %>
+  <%# Units moved in (transfer_in) carry price 0 because nothing was paid
+      here; a 0 purchase price and the resulting 100% "gain" would be
+      figures the movement never had. %>
+  <% unpriced_movement = trade.internal_movement? && trade.price.to_d.zero? %>
 
   <% unless trade.security.cash? %>
   <div class="mb-2">
@@ -51,7 +55,7 @@
         <dl class="space-y-3 px-3 py-2">
             <div class="flex items-center justify-between text-sm">
               <dt class="text-secondary"><%= t(".symbol_label") %></dt>
-              <dd class="text-primary"><%= trade.security.ticker %></dd>
+              <dd class="text-primary"><%= trade.security.display_ticker %></dd>
             </div>
 
           <% if trade.qty.positive? %>
@@ -60,10 +64,12 @@
               <dd class="text-primary"><%= trade.qty.abs %></dd>
             </div>
 
-            <div class="flex items-center justify-between text-sm">
-              <dt class="text-secondary"><%= t(".purchase_price_label") %></dt>
-              <dd class="text-primary privacy-sensitive"><%= format_money trade.price_money %></dd>
-            </div>
+            <% unless unpriced_movement %>
+              <div class="flex items-center justify-between text-sm">
+                <dt class="text-secondary"><%= t(".purchase_price_label") %></dt>
+                <dd class="text-primary privacy-sensitive"><%= format_money trade.price_money %></dd>
+              </div>
+            <% end %>
           <% end %>
 
           <% if trade.qty.positive? && trade.security.current_price.present? %>
@@ -73,7 +79,7 @@
             </div>
           <% end %>
 
-          <% if trade.qty.positive? && trade.unrealized_gain_loss.present? %>
+          <% if trade.qty.positive? && trade.unrealized_gain_loss.present? && !unpriced_movement %>
             <div class="flex items-center justify-between text-sm">
               <dt class="text-secondary"><%= t(".total_return_label") %></dt>
               <dd style="color: <%= trade.unrealized_gain_loss.color %>;">

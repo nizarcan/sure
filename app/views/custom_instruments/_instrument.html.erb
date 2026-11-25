@@ -1,0 +1,116 @@
+<%# locals: (instrument:, latest_price:, previous_price:, positions:, status:) %>
+
+<% price = custom_instrument_price_money(latest_price) %>
+<% change = custom_instrument_change(latest_price, previous_price) %>
+<% in_use = instrument.in_use? %>
+
+<div id="<%= dom_id(instrument) %>" class="bg-container hover:bg-surface-hover p-4">
+  <div class="flex items-start justify-between gap-3">
+    <%= link_to custom_instrument_path(instrument),
+          class: "flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center",
+          data: { turbo_frame: "drawer" } do %>
+      <div class="flex min-w-0 flex-1 items-center gap-3">
+        <%= render DS::FilledIcon.new(
+              variant: :text,
+              text: instrument.symbol,
+              text_length: 2,
+              rounded: true,
+              description: instrument.symbol
+            ) %>
+
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm text-primary">
+            <%= instrument.name %>
+            <span class="text-secondary">&middot; <%= instrument.symbol %></span>
+          </p>
+          <p class="truncate font-mono text-xs text-secondary"><%= instrument.formula %></p>
+        </div>
+      </div>
+
+      <div class="flex shrink-0 items-center gap-3 sm:ml-auto">
+        <div class="text-right">
+          <% if price %>
+            <p class="font-mono text-sm font-medium text-primary privacy-sensitive"><%= format_money(price) %></p>
+          <% else %>
+            <p class="text-sm text-secondary"><%= t(".no_price") %></p>
+          <% end %>
+
+          <% if change %>
+            <div class="flex items-center justify-end gap-1.5">
+              <p class="text-xs font-medium privacy-sensitive" style="color: <%= change.color %>;">
+                <%= change.percent_formatted %>
+              </p>
+              <p class="text-xs text-secondary"><%= t(".change_window") %></p>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+
+    <% unless Current.user&.guest? %>
+      <div class="shrink-0">
+        <%= render DS::Menu.new do |menu| %>
+          <% unless instrument.archived? %>
+            <% menu.with_item(
+                 variant: "link",
+                 text: t(".add_units"),
+                 href: add_units_custom_instrument_path(instrument),
+                 icon: "plus",
+                 frame: :modal
+               ) %>
+          <% end %>
+
+          <% menu.with_item(
+               variant: "link",
+               text: t(".edit"),
+               href: edit_custom_instrument_path(instrument),
+               icon: "pencil",
+               frame: :modal
+             ) %>
+
+          <% if instrument.archived? %>
+            <% menu.with_item(
+                 variant: "button",
+                 text: t(".unarchive"),
+                 href: unarchive_custom_instrument_path(instrument),
+                 icon: "archive-restore",
+                 method: :post
+               ) %>
+          <% else %>
+            <% menu.with_item(
+                 variant: "button",
+                 text: t(".archive"),
+                 href: archive_custom_instrument_path(instrument),
+                 icon: "archive",
+                 method: :post
+               ) %>
+          <% end %>
+
+          <% unless in_use %>
+            <% menu.with_item(
+                 variant: "button",
+                 text: t(".delete"),
+                 href: custom_instrument_path(instrument),
+                 icon: "trash-2",
+                 method: :delete,
+                 destructive: true,
+                 confirm: CustomConfirm.for_resource_deletion(instrument.name)
+               ) %>
+          <% end %>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-11 text-xs text-secondary">
+    <p><%= custom_instrument_held_label(positions) %></p>
+
+    <% if status.present? %>
+      <%= custom_instrument_status_pill(instrument, status) %>
+    <% end %>
+
+    <% if in_use && !Current.user&.guest? %>
+      <p class="text-subdued"><%= t(".in_use_hint") %></p>
+    <% end %>
+  </div>
+</div>

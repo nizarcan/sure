@@ -41,10 +41,11 @@ class Api::V1::SecuritiesController < Api::V1::BaseController
     def securities_scope
       Security
         .where(id: scoped_security_ids)
+        .includes(:custom_instrument)
     end
 
     def apply_filters(query)
-      query = query.where("LOWER(securities.ticker) = ?", params[:ticker].to_s.strip.downcase) if params[:ticker].present?
+      query = filter_by_ticker(query) if params[:ticker].present?
       query = query.where(exchange_operating_mic: params[:exchange_operating_mic].to_s.strip.upcase) if params[:exchange_operating_mic].present?
       if params[:kind].present?
         invalid_filter!("kind must be one of: #{Security::KINDS.join(', ')}") unless Security::KINDS.include?(params[:kind])
@@ -56,5 +57,21 @@ class Api::V1::SecuritiesController < Api::V1::BaseController
         query = query.where(offline: offline)
       end
       query
+    end
+
+    # A custom security's ticker is a globally unique CUSTOM-<uuid>, so users
+    # know it by its instrument's symbol instead. Only this family's own
+    # instruments are matched; the result stays inside securities_scope.
+    def filter_by_ticker(query)
+      value = params[:ticker].to_s.strip
+      custom_security_ids = current_resource_owner.family.custom_instruments
+        .where("UPPER(symbol) = ?", value.upcase)
+        .select(:security_id)
+
+      query.where(
+        "LOWER(securities.ticker) = :ticker OR securities.id IN (:custom_security_ids)",
+        ticker: value.downcase,
+        custom_security_ids: custom_security_ids
+      )
     end
 end

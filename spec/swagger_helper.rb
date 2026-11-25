@@ -1879,7 +1879,7 @@ RSpec.configure do |config|
               id: { type: :string, format: :uuid },
               ticker: { type: :string },
               name: { type: :string, nullable: true },
-              kind: { type: :string, enum: %w[standard cash] },
+              kind: { type: :string, enum: %w[standard cash custom] },
               country_code: { type: :string, nullable: true },
               exchange_mic: { type: :string, nullable: true },
               exchange_acronym: { type: :string, nullable: true },

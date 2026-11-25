@@ -14,7 +14,7 @@
   <%# avg_cost, not the raw column: the statement preloads the trade-history
       fallback for every holding, so a position whose basis is computed shows
       it here too. %>
-  <% table.with_column(t("portfolios.holdings.columns.cost_basis_per_share"), numeric: true, class: "text-secondary privacy-sensitive") do |holding| %>
+  <% table.with_column(row.security.custom? ? t("portfolios.holdings.columns.cost_basis_per_unit") : t("portfolios.holdings.columns.cost_basis_per_share"), numeric: true, class: "text-secondary privacy-sensitive") do |holding| %>
     <% if holding.avg_cost %>
       <%= format_money(holding.avg_cost) %>
     <% else %>

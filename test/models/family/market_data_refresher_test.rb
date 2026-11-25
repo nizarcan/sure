@@ -70,4 +70,16 @@ class Family::MarketDataRefresherTest < ActiveSupport::TestCase
       Family::MarketDataRefresher.new(@family).refresh
     end
   end
+
+  test "refreshes a custom instrument without a securities provider" do
+    instrument = @family.custom_instruments.create!(name: "Dollar", symbol: "REFRESHC", currency: "USD", formula: "1 * USD")
+    account = @family.accounts.create!(name: "Brokerage", currency: "USD", balance: 0, accountable: Investment.new)
+    account.holdings.create!(security: instrument.security, date: Date.current, qty: 1, price: 1, amount: 1, currency: "USD")
+
+    Security.stubs(:provider).returns(nil)
+
+    Family::MarketDataRefresher.new(@family).refresh
+
+    assert Security::Price.where(security: instrument.security).exists?
+  end
 end

@@ -17,8 +17,8 @@ class UI::Account::HealthStatus < ApplicationComponent
   def detail_text(position)
     t(
       "accounts.health_status.negative_positions.detail",
-      name: position.security.name.presence || position.security.ticker,
-      ticker: position.security.ticker,
+      name: position.security.name.presence || position.security.display_ticker,
+      ticker: position.security.display_ticker,
       date: helpers.format_date(position.first_date),
       qty: helpers.format_quantity(position.lowest_qty, exact: true)
     )

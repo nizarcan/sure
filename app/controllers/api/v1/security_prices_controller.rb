@@ -60,10 +60,12 @@ class Api::V1::SecurityPricesController < Api::V1::BaseController
     end
 
     # The security and the caller's writable accounts eligible to price it.
-    # Unknown, malformed and unreachable ids all get the same 404.
+    # Unknown, malformed and unreachable ids all get the same 404. Another
+    # family's custom security is unknown here too.
     def writable_security_and_accounts
       security_id = params.require(:security_id).to_s
       security = Security.find_by(id: security_id) if valid_uuid?(security_id)
+      security = nil if security&.custom? && security.custom_instrument&.family_id != current_resource_owner.family_id
       accounts = writable_accounts_referencing(security) if security
       raise ActiveRecord::RecordNotFound, "Security not found" unless accounts&.exists?
 
@@ -107,7 +109,7 @@ class Api::V1::SecurityPricesController < Api::V1::BaseController
     def security_prices_scope
       Security::Price
         .where(security_id: scoped_security_ids)
-        .includes(:security)
+        .includes(security: :custom_instrument)
     end
 
     def apply_filters(query)

@@ -12,11 +12,21 @@ module Api::V1::SecurityResourceFiltering
 
   private
 
+    # Securities reachable through the caller's holdings and trades. A custom
+    # security is family-owned however it was reached, so another family's
+    # is dropped: its prices and details stay private.
     def scoped_security_ids
-      Security
+      reachable = Security
         .where(id: holding_security_ids)
         .or(Security.where(id: trade_security_ids))
         .distinct
+        .select(:id)
+
+      Security.where(id: reachable).where.not(kind: "custom")
+        .or(
+          Security.where(id: reachable, kind: "custom")
+            .where(id: current_resource_owner.family.custom_instruments.select(:security_id))
+        )
         .select(:id)
     end
 

@@ -1,12 +1,14 @@
 <%# locals: (holding:, crypto:) %>
 
+<% custom = holding.security.custom? %>
+
 <%= turbo_frame_tag dom_id(holding) do %>
   <div class="grid grid-cols-12 items-center text-primary text-sm font-medium p-4">
     <div class="col-span-4 flex items-center gap-4">
       <% if (logo = holding.security.display_logo_url).present? %>
         <%= image_tag logo, class: "w-9 h-9 rounded-full", loading: "lazy" %>
       <% else %>
-        <%= render DS::FilledIcon.new(variant: :text, text: holding.name, size: "md", rounded: true) %>
+        <%= render DS::FilledIcon.new(variant: :text, text: custom ? holding.ticker : holding.name, size: "md", rounded: true, text_length: custom ? 2 : 1) %>
       <% end %>
       <div class="space-y-0.5">
         <%= link_to holding.name, holding_path(holding), data: { turbo_frame: :drawer }, class: "hover:underline" %>
@@ -30,7 +32,7 @@
 
     <div class="col-span-2 text-right">
       <%= render "holdings/cost_basis_cell", holding: holding, editable: false %>
-      <%= tag.p t(".per_share"), class: "font-normal text-secondary" %>
+      <%= tag.p custom ? t(".per_unit") : t(".per_share"), class: "font-normal text-secondary" %>
     </div>
 
     <div class="col-span-2 text-right">
@@ -39,7 +41,8 @@
       <% else %>
         <%= tag.p "--", class: "text-secondary" %>
       <% end %>
-      <%= tag.p t(".shares", qty: format_quantity(holding.qty, exact: crypto)), class: "font-normal text-secondary privacy-sensitive" %>
+      <% quantity = format_quantity(holding.qty, exact: crypto) %>
+      <%= tag.p custom ? t(".units", qty: quantity, symbol: holding.ticker) : t(".shares", qty: quantity), class: "font-normal text-secondary privacy-sensitive" %>
     </div>
 
     <div class="col-span-2 text-right">

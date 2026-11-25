@@ -1,0 +1,186 @@
+tr:
+  custom_instruments:
+    formula:
+      errors:
+        blank: "Bir formül girin."
+        too_long: "Formül çok uzun. Kısaltıp tekrar deneyin."
+        comma: "Ondalık için virgül değil nokta kullanın (örneğin 0.0517)."
+        unexpected_character: "%{position}. konumda beklenmeyen karakter: %{token}."
+        unexpected_token: "%{position}. konumda beklenmeyen ifade: %{token}."
+        unexpected_end: "Formül erken bitiyor. Operatörden sonraki eksik değeri ekleyin."
+        unbalanced_parenthesis: "Kapatılmayan bir parantez var."
+        number_too_long: "Bir sayı çok uzun. Daha az basamak kullanın."
+        too_deep: "Formül çok fazla iç içe geçmiş."
+        divide_by_zero: "Sıfıra bölme yapılamaz."
+        divide_by_asset: "Bir varlığa bölme yapılamaz. Bölen yalnızca bir sayı olabilir."
+        multiply_assets: "İki varlık birbiriyle çarpılamaz. Bir varlık yalnızca bir sayıyla çarpılabilir."
+        constant_term: "Formül yalnızca varlıklardan oluşmalı; sabit bir tutar eklenemez. Sabit bir tutar eklemek için onu bir para birimiyle çarpın, örneğin 150 * TRY."
+        no_assets: "Formülde en az bir varlık olmalı, örneğin XAU."
+        unterminated_security: "Bir menkul kıymet referansında kapanış ] eksik."
+        empty_security: "Menkul kıymet referansı boş. [GC=F] gibi bir sembol kullanın."
+    resolver:
+      errors:
+        unknown_symbol: "Bilinmeyen sembol: %{symbol}. Bir para birimi kodu veya kendi enstrümanlarınızdan birini kullanın."
+        unknown_security: "%{token} ile eşleşen bir menkul kıymet yok."
+        self_reference: "Bir enstrüman kendisini içeremez (%{token})."
+        cycle: "%{token} eklemek enstrümanlar arasında döngü oluşturur."
+        nesting_too_deep: "Enstrümanlar en fazla 5 seviye iç içe olabilir (%{token})."
+        archived_instrument: "%{symbol} arşivlenmiş. Formülde kullanmadan önce geri yükleyin."
+    price_importer:
+      missing_prices: "Şunlar için fiyat yok: %{components}."
+    templates:
+      grau:
+        name: "Gram altın"
+      ceyrek:
+        name: "Çeyrek altın"
+      yarim:
+        name: "Yarım altın"
+      tam:
+        name: "Tam altın"
+      cumhuriyet:
+        name: "Cumhuriyet altını"
+      gremse:
+        name: "Gremse altın"
+      bilezik22:
+        name: "22 ayar bilezik (gram)"
+      grau14:
+        name: "14 ayar altın (gram)"
+      kgau:
+        name: "Kilo altın"
+      grag:
+        name: "Gram gümüş"
+      kgag:
+        name: "Kilo gümüş"
+      basket:
+        name: "Altın ve gümüş sepeti"
+    index:
+      title: "Özel enstrümanlar"
+      new: "Yeni enstrüman"
+      instruments: "Özel enstrümanlar"
+      empty_title: "Kendi fiyatlanan birimini tanımla"
+      empty_description: "Özel enstrüman, Sure'nin zaten takip ettiği varlıklara (altın veya bir hisse gibi) dayanan bir formülle fiyatlanır. Diğer menkul kıymetler gibi alınıp satılabilir, elde tutulabilir ve raporlanabilir."
+      empty_action: "Yeni enstrüman"
+      empty_templates: "Veya bir şablonla başlayın"
+      archived_title: "Arşivlenenler (%{count})"
+      not_held: "Elde tutulmuyor"
+      held:
+        one: "Elde: 1 hesapta %{qty}"
+        other: "Elde: %{count} hesapta %{qty}"
+      status:
+        pending: "Fiyatlanıyor…"
+        missing: "Fiyat yok"
+        stale: "Güncel değil"
+        stale_title: "Güncel olmayan kurlar: %{components}"
+        component_date: "%{label} (%{date})"
+        component_missing: "%{label} (fiyat yok)"
+    instrument:
+      no_price: "Fiyat yok"
+      change_window: "30g"
+      add_units: "Birim ekle"
+      edit: "Düzenle"
+      archive: "Arşivle"
+      unarchive: "Geri yükle"
+      delete: "Sil"
+      in_use_hint: "Kullanımda: silmek yerine arşivleyin."
+    new:
+      title: "Yeni özel enstrüman"
+    edit:
+      title: "Özel enstrümanı düzenle"
+    created: "Özel enstrüman oluşturuldu"
+    updated: "Özel enstrüman güncellendi"
+    destroy:
+      deleted: "Özel enstrüman silindi"
+      in_use: "Bu enstrüman kullanımda. Silmek yerine arşivleyin."
+    archive:
+      archived: "Özel enstrüman arşivlendi"
+    unarchive:
+      unarchived: "Özel enstrüman geri yüklendi"
+    refresh:
+      refresh_queued: "Fiyat arka planda yenileniyor."
+    form:
+      template: "Şablon"
+      template_blank: "Sıfırdan başla"
+      template_hint: "Bir şablon seçmek ad, sembol ve formülü doldurur. Kendi yazdıklarınız korunur."
+      name: "Ad"
+      symbol: "Sembol"
+      symbol_hint: "2–12 karakter: harf, rakam ve alt çizgi; harfle başlamalı."
+      currency: "Para birimi"
+      formula: "Formül"
+      chips_label: "Ekle"
+      insert_chip: "%{chip} ekle"
+      insert_security: "Hisse, fon veya kripto ekle"
+      insert_security_placeholder: "Sembol veya adla ara"
+      description: "Notlar"
+      preview_title: "Canlı önizleme"
+      preview_placeholder: "Fiyatını görmek için bir formül yazın."
+      preview_error: "Şu anda fiyatlar alınamadı. Birazdan tekrar deneyin."
+      history_warning:
+        zero: "Bu değişiklik enstrümanın tüm fiyat geçmişini yeniden hesaplar. Henüz hiçbir hesap onu tutmuyor veya alıp satmıyor."
+        one: "Bu değişiklik enstrümanın tüm fiyat geçmişini yeniden hesaplar. 1 hesap onu tutuyor veya alıp satıyor."
+        other: "Bu değişiklik enstrümanın tüm fiyat geçmişini yeniden hesaplar. %{count} hesap onu tutuyor veya alıp satıyor."
+      help_title: "Formüller nasıl çalışır"
+      help:
+        operators: "Operatörler: + - * / ve parantezler. × ve · çarpma, ÷ bölme anlamına da gelir."
+        percent: "% 100'e böler; yani * 103% %3 prim ekler."
+        security: "Hisse, fon veya kripto köşeli parantez içinde yazılır: [THYAO:XIST] veya [GC=F]."
+        premium: "Örnek: %2 primli çeyrek altın CEYREK * 102% olur."
+        fixed_amount: "Sabit tutar, bir para birimiyle çarpılarak eklenir: + 150 * TRY."
+        troy_ounce: "Troy ons: 31.1034768 gram."
+      create: "Enstrümanı oluştur"
+      save: "Değişiklikleri kaydet"
+    preview:
+      price_fetch_failed: "Şu anda fiyatlar alınamadı. Birazdan tekrar deneyin."
+      unit: "birim"
+      placeholder: "Fiyatını görmek için bir formül yazın."
+      nonpositive: "Bu formül sıfır veya altında fiyatlanıyor. Ağırlıkları ve varlıkları kontrol edin."
+      price_line: "1 %{symbol} = %{price}"
+      unpriced_total: "Bu formülde güncel fiyatı olmayan bileşenler var."
+      as_of: "%{date} itibarıyla"
+      components: "Bileşenler"
+      asset: "Varlık"
+      weight: "Ağırlık"
+      unit_price: "Birim fiyat"
+      value: "Değer"
+      share: "Pay"
+      unknown: "Bilinmiyor"
+      inverse: "1 %{asset} = %{amount} %{symbol}"
+      stale: "Bazı kurlar güncel değil (en eskisi %{date}). Fiyat, mevcut en yeni kurları kullanıyor."
+      unpriced: "Şunlar için güncel fiyat yok: %{components}."
+      too_small: "Fiyat aşırı küçük. Troy ons bölmesi gibi eksik bir dönüşüm olup olmadığını kontrol edin."
+    show:
+      price_fetch_failed: "Şu anda fiyatlar alınamadı. Birazdan tekrar deneyin."
+      archived: "Arşivlendi"
+      refresh: "Fiyatı yenile"
+      edit: "Düzenle"
+      add_units: "Birim ekle"
+      no_price: "Henüz fiyat yok"
+      as_of: "%{date} itibarıyla"
+      chart_title: "Fiyat geçmişi (1 yıl)"
+      chart_empty: "Grafik için henüz yeterli fiyat geçmişi yok."
+      breakdown_title: "Güncel fiyat dökümü"
+      definition_title: "Tanım"
+      positions_title: "Pozisyonlar"
+      account: "Hesap"
+      quantity: "Miktar"
+      value: "Değer"
+      unknown: "Bilinmiyor"
+      no_positions: "Görünen hiçbir hesapta bu enstrüman yok."
+      used_by_title: "Kullananlar"
+    status_alerts:
+      pending_title: "Fiyat hesaplanıyor"
+      pending_message: "Fiyatlar hesaplanıyor. Bu genellikle bir dakika sürer."
+      missing_title: "Henüz fiyat yok"
+      missing_message: "Hesaplamak için birim ekleyin veya fiyatı yenileyin."
+      stale_title: "Güncel olmayan kurlar"
+      stale_component: "%{label}: son kur %{date}"
+      missing_component: "%{label}: kur yok"
+      stale_instrument: "En yeni fiyat %{date} tarihli."
+      stale_instrument_missing: "En yeni fiyat güncel değil."
+      stale_advice: "Kaynaklar güncellendikten sonra fiyatı yenileyin."
+    add_units:
+      title: "%{symbol} için birim ekle"
+      description: "Birimlerin ekleneceği hesabı seçin. Nakit değişmez; maliyeti daha sonra varlık detayından belirleyin."
+      empty_title: "Birim eklenecek yatırım hesabı yok"
+      empty_description: "Önce bir yatırım veya kripto hesabı oluşturun, sonra ona birim ekleyin."
+      empty_action: "Yeni yatırım hesabı"
+      archived: "Bu enstrüman arşivlenmiş. Birim eklemeden önce geri yükleyin."

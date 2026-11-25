@@ -39,7 +39,7 @@
       <% if (logo = row.security.display_logo_url).present? %>
         <%= image_tag logo, class: "w-8 h-8 rounded-full shrink-0", loading: "lazy", alt: row.ticker %>
       <% else %>
-        <%= render DS::FilledIcon.new(variant: :text, text: row.name, size: "md", rounded: true) %>
+        <%= render DS::FilledIcon.new(variant: :text, text: row.security.custom? ? row.ticker : row.name, size: "md", rounded: true, text_length: row.security.custom? ? 2 : 1) %>
       <% end %>
       <div class="min-w-0 space-y-0.5 text-left">
         <%= tag.p row.name, class: "wrap-anywhere" %>

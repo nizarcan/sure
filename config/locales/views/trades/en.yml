@@ -14,18 +14,24 @@ en:
       holding: Ticker symbol
       holding_optional: Ticker symbol (optional)
       price: Price per share
+      price_per_unit: Price per unit
+      current_price_hint: "Current price: %{price}"
       qty: Quantity
       submit: Add transaction
       ticker_placeholder: AAPL
       type: Type
       type_buy: Buy
       type_sell: Sell
+      type_transfer_in: Add units already owned
       type_deposit: Deposit
       type_withdrawal: Withdrawal
       type_dividend: Dividend
       type_interest: Interest
       dividend_requires_security: Security is required for dividends
+      security_not_found: Could not find the selected security
+      qty_must_be_positive: Enter how many units you own
       trade_requires_security: A security (ticker) is required for buy and sell trades
+      transfer_in_hint: Cash does not change. You can set what you paid for these units later from the holding.
     trade:
       scheduled: Scheduled
       scheduled_tooltip: Dated in the future — won't affect your balance until then
@@ -51,6 +57,9 @@ en:
       total_return_label: Unrealized gain/loss
     new:
       title: New transaction
+      title_transfer_in: Add units already owned
+    create:
+      transfer_in_name: "Added %{qty} units of %{symbol}"
     show:
       additional: Additional
       amount_label: Amount

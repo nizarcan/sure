@@ -2,6 +2,7 @@ require "test_helper"
 
 class TransactionsTradeConversionTest < ActionDispatch::IntegrationTest
   include EntriesTestHelper
+  include CustomInstrumentTestHelper
 
   setup do
     @user = users(:family_admin)
@@ -186,5 +187,80 @@ class TransactionsTradeConversionTest < ActionDispatch::IntegrationTest
       }
     end
     assert_not @entry.reload.excluded?
+  end
+
+  test "converts to a trade on a custom instrument typed by symbol" do
+    instrument = create_custom_instrument(family: @user.family)
+
+    assert_difference "Trade.count", 1 do
+      post create_trade_from_transaction_transaction_url(@entry.transaction), params: {
+        security_id: "__custom__", custom_ticker: "grau", qty: 2, price: 50, investment_activity_label: "Buy"
+      }
+    end
+
+    assert_nil flash[:alert], flash[:alert]
+    trade = @account.entries.where(entryable_type: "Trade").order(:created_at).last.trade
+    assert_equal instrument.security, trade.security
+    assert_equal 2, trade.qty
+  end
+
+  test "converts to a trade on a custom instrument picked in the combobox" do
+    instrument = create_custom_instrument(family: @user.family)
+
+    assert_difference "Trade.count", 1 do
+      post create_trade_from_transaction_transaction_url(@entry.transaction), params: {
+        security_id: "__custom__",
+        ticker: instrument.security.to_combobox_option.id,
+        qty: 2,
+        price: 50,
+        investment_activity_label: "Buy"
+      }
+    end
+
+    assert_nil flash[:alert], flash[:alert]
+    trade = @account.entries.where(entryable_type: "Trade").order(:created_at).last.trade
+    assert_equal instrument.security, trade.security
+  end
+
+  test "converts to a trade on a custom security id from the holdings dropdown" do
+    instrument = create_custom_instrument(family: @user.family)
+
+    assert_difference "Trade.count", 1 do
+      post create_trade_from_transaction_transaction_url(@entry.transaction), params: {
+        security_id: instrument.security.id, qty: 2, price: 50, investment_activity_label: "Buy"
+      }
+    end
+
+    assert_nil flash[:alert], flash[:alert]
+    trade = @account.entries.where(entryable_type: "Trade").order(:created_at).last.trade
+    assert_equal instrument.security, trade.security
+  end
+
+  test "another family's custom instrument cannot be used for a conversion" do
+    foreign = create_custom_instrument(family: families(:empty), symbol: "FOREIGN")
+
+    assert_no_difference "Trade.count" do
+      post create_trade_from_transaction_transaction_url(@entry.transaction), params: {
+        security_id: "__custom__", ticker: foreign.security.to_combobox_option.id,
+        qty: 2, price: 50, investment_activity_label: "Buy"
+      }
+    end
+
+    assert_redirected_to transactions_path
+    assert_equal I18n.t("transactions.convert_to_trade.errors.security_not_found"), flash[:alert]
+    assert_not @entry.reload.excluded?
+  end
+
+  test "another family's custom security id cannot be used for a conversion" do
+    foreign = create_custom_instrument(family: families(:empty), symbol: "FOREIGN")
+
+    assert_no_difference "Trade.count" do
+      post create_trade_from_transaction_transaction_url(@entry.transaction), params: {
+        security_id: foreign.security.id, qty: 2, price: 50, investment_activity_label: "Buy"
+      }
+    end
+
+    assert_redirected_to transactions_path
+    assert_equal I18n.t("transactions.convert_to_trade.errors.security_not_found"), flash[:alert]
   end
 end

@@ -11,6 +11,7 @@ class SureImport < Import
     "Balance" => :balances,
     "Category" => :categories,
     "Tag" => :tags,
+    "CustomInstrument" => :custom_instruments,
     "Merchant" => :merchants,
     "RecurringTransaction" => :recurring_transactions,
     "Transaction" => :transactions,
@@ -292,9 +293,10 @@ class SureImport < Import
 
     # Category/Tag/Merchant rows matched to an existing family record by name, and Budget/
     # BudgetCategory rows merged into the family's untouched default budget, are "updated",
-    # not created, so they add nothing to the readback delta.
+    # not created, so they add nothing to the readback delta. A custom instrument
+    # matched by symbol is the same.
     def reused_counts_from(summary)
-      %w[categories tags merchants budgets budget_categories].index_with { |key| (summary || {}).dig(key, "updated").to_i }
+      %w[categories tags custom_instruments merchants budgets budget_categories].index_with { |key| (summary || {}).dig(key, "updated").to_i }
     end
 
     # A ProviderMerchant row with no shared match yet becomes a FamilyMerchant
@@ -364,6 +366,7 @@ class SureImport < Import
         balances: Balance.joins(:account).where(accounts: { family_id: family.id }).count,
         categories: family.categories.count,
         tags: family.tags.count,
+        custom_instruments: family.custom_instruments.count,
         merchants: family.merchants.count,
         recurring_transactions: family.recurring_transactions.count,
         transactions: family.entries.where(entryable_type: "Transaction").count,

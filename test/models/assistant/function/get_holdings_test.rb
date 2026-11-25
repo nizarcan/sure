@@ -32,6 +32,21 @@ class Assistant::Function::GetHoldingsTest < ActiveSupport::TestCase
     assert_not_includes rows.map { |row| row[:account] }, hidden.account.name
   end
 
+  test "get_holdings lists and filters a custom holding by its instrument symbol" do
+    instrument = @user.family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "USD", formula: "2 * USD"
+    )
+    @account.holdings.create!(
+      security: instrument.security, date: Date.current, qty: 4, price: 10, amount: 40, currency: "USD"
+    )
+
+    assert_equal [ "GRAU" ], tickers("securities" => [ "GRAU" ])
+    assert_equal [ "GRAU" ], tickers("securities" => [ "grau" ])
+
+    enum = @fn.params_schema.dig(:properties, :securities, :items, :enum)
+    assert_includes enum, "GRAU"
+  end
+
   test "get_holdings without a security filter is unchanged" do
     assert_equal [ "AAPL", "MSFT" ], tickers({})
   end

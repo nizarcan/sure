@@ -35,7 +35,7 @@ end
 if trade.security.present?
   json.security do
     json.id trade.security.id
-    json.ticker trade.security.ticker
+    json.ticker trade.security.display_ticker
     json.name trade.security.name
   end
 else

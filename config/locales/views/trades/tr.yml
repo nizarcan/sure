@@ -10,6 +10,8 @@ tr:
       holding: Sembol
       holding_optional: Sembol (isteğe bağlı)
       price: Hisse başı fiyat
+      price_per_unit: Birim başına fiyat
+      current_price_hint: "Güncel fiyat: %{price}"
       qty: Miktar
       submit: İşlem ekle
       ticker_placeholder: AAPL
@@ -17,11 +19,16 @@ tr:
         gereklidir
       type: Tür
       type_buy: Al
+      type_sell: Sat
+      type_transfer_in: Sahip olduğunuz birimleri ekleyin
       type_deposit: Yatırma
       type_dividend: Temettü
       type_interest: Faiz
-      type_sell: Sat
       type_withdrawal: Çekme
+      security_not_found: Seçilen menkul kıymet bulunamadı
+      qty_must_be_positive: Sahip olduğunuz birim sayısını girin
+      transfer_in_hint: Nakit değişmez. Bu birimler için ödediğiniz tutarı daha sonra varlık
+        detayından ayarlayabilirsiniz.
     header:
       buy: Al
       current_market_price_label: Güncel Piyasa Fiyatı
@@ -44,6 +51,9 @@ tr:
       withdrawal: Çekim
     new:
       title: Yeni işlem
+      title_transfer_in: Sahip olduğunuz birimleri ekleyin
+    create:
+      transfer_in_name: "%{symbol} için %{qty} birim eklendi"
     show:
       additional: Ekstra
       amount_label: Tutar

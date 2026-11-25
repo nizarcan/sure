@@ -1,0 +1,40 @@
+---
+tr:
+  activerecord:
+    attributes:
+      custom_instrument:
+        archived_at: Arşivlenme tarihi
+        currency: Para birimi
+        description: Notlar
+        formula: Formül
+        name: Ad
+        symbol: Sembol
+      custom_instrument_component:
+        currency: Para birimi
+        position: Konum
+        security: Menkul kıymet
+        weight: Ağırlık
+    errors:
+      models:
+        custom_instrument:
+          attributes:
+            base:
+              in_use: "Bu enstrüman bir işlem, bir varlık veya başka bir enstrüman tarafından kullanılıyor. Silmek yerine arşivleyin."
+            formula:
+              cycle: "Bu formül enstrümanlar arasında döngü oluşturur."
+              nesting_too_deep: "Enstrümanlar en fazla 5 seviye iç içe olabilir."
+              no_components: "Bir formül en az bir bileşene çözümlenmelidir."
+              too_many_components: "Bir formülde en fazla 20 bileşen olabilir."
+              weight_out_of_range: "Bir bileşenin ağırlığı çok büyük veya çok küçük."
+            name:
+              too_long: "çok uzun (en fazla 100 karakter)"
+            symbol:
+              currency_code: "bir para birimi kodu olamaz"
+              taken: "bu ailede zaten kullanılmış"
+        custom_instrument_component:
+          attributes:
+            base:
+              one_source: "ya bir para birimi ya da bir menkul kıymet olmalı, ikisi birden değil"
+    models:
+      custom_instrument: Özel enstrüman
+      custom_instrument_component: Özel enstrüman bileşeni

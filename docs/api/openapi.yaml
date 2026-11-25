@@ -3462,6 +3462,7 @@ components:
           enum:
           - standard
           - cash
+          - custom
         country_code:
           type: string
           nullable: true
@@ -4102,6 +4103,8 @@ components:
           - budget_categories
           - categories
           - tags
+          - custom_instruments
+          - custom_instrument_components
           - taggings
           - merchants
           - family_merchant_associations
@@ -4194,6 +4197,12 @@ components:
               type: integer
               minimum: 0
             tags:
+              type: integer
+              minimum: 0
+            custom_instruments:
+              type: integer
+              minimum: 0
+            custom_instrument_components:
               type: integer
               minimum: 0
             taggings:
@@ -9791,6 +9800,7 @@ paths:
           enum:
           - standard
           - cash
+          - custom
       - name: offline
         in: query
         required: false

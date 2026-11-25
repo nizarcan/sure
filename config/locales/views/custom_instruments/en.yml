@@ -1,0 +1,186 @@
+en:
+  custom_instruments:
+    formula:
+      errors:
+        blank: "Enter a formula."
+        too_long: "The formula is too long. Shorten it and try again."
+        comma: "Use a dot for decimals, not a comma (for example 0.0517)."
+        unexpected_character: "Unexpected character %{token} at position %{position}."
+        unexpected_token: "Unexpected %{token} at position %{position}."
+        unexpected_end: "The formula ends too early. Add the missing value after the operator."
+        unbalanced_parenthesis: "A parenthesis is not closed."
+        number_too_long: "A number is too long. Use fewer digits."
+        too_deep: "The formula is nested too deeply."
+        divide_by_zero: "Cannot divide by zero."
+        divide_by_asset: "Cannot divide by an asset. Only a number can be a divisor."
+        multiply_assets: "Cannot multiply two assets. An asset can only be multiplied by a number."
+        constant_term: "The formula must be built from assets only, without a fixed amount. To add a fixed amount, multiply it by a currency, for example 150 * TRY."
+        no_assets: "The formula must include at least one asset, such as XAU."
+        unterminated_security: "A security reference is missing its closing ]."
+        empty_security: "A security reference is empty. Use a ticker such as [GC=F]."
+    resolver:
+      errors:
+        unknown_symbol: "Unknown symbol %{symbol}. Use a currency code or one of your instruments."
+        unknown_security: "No security matches %{token}."
+        self_reference: "An instrument cannot include itself (%{token})."
+        cycle: "Including %{token} would create a cycle between instruments."
+        nesting_too_deep: "Instruments cannot be nested more than 5 levels deep (%{token})."
+        archived_instrument: "%{symbol} is archived. Restore it before using it in a formula."
+    price_importer:
+      missing_prices: "There are no prices for: %{components}."
+    templates:
+      grau:
+        name: "Gram gold"
+      ceyrek:
+        name: "Quarter gold coin"
+      yarim:
+        name: "Half gold coin"
+      tam:
+        name: "Full gold coin"
+      cumhuriyet:
+        name: "Republic gold coin"
+      gremse:
+        name: "Gremse gold coin"
+      bilezik22:
+        name: "22k gold bracelet (per gram)"
+      grau14:
+        name: "14k gold (per gram)"
+      kgau:
+        name: "Kilogram gold"
+      grag:
+        name: "Gram silver"
+      kgag:
+        name: "Kilogram silver"
+      basket:
+        name: "Gold and silver basket"
+    index:
+      title: "Custom instruments"
+      new: "New instrument"
+      instruments: "Custom instruments"
+      empty_title: "Define your own priced unit"
+      empty_description: "A custom instrument is priced by a formula over assets Sure already tracks, such as gold or a stock. It can be bought, held and reported like any other security."
+      empty_action: "New instrument"
+      empty_templates: "Or start from a template"
+      archived_title: "Archived (%{count})"
+      not_held: "Not held"
+      held:
+        one: "Held: %{qty} in 1 account"
+        other: "Held: %{qty} in %{count} accounts"
+      status:
+        pending: "Pricing…"
+        missing: "No price"
+        stale: "Stale"
+        stale_title: "Out-of-date rates: %{components}"
+        component_date: "%{label} (%{date})"
+        component_missing: "%{label} (no price)"
+    instrument:
+      no_price: "No price"
+      change_window: "30d"
+      add_units: "Add units"
+      edit: "Edit"
+      archive: "Archive"
+      unarchive: "Restore"
+      delete: "Delete"
+      in_use_hint: "In use: archive instead of deleting."
+    new:
+      title: "New custom instrument"
+    edit:
+      title: "Edit custom instrument"
+    created: "Custom instrument created"
+    updated: "Custom instrument updated"
+    destroy:
+      deleted: "Custom instrument deleted"
+      in_use: "This instrument is in use. Archive it instead."
+    archive:
+      archived: "Custom instrument archived"
+    unarchive:
+      unarchived: "Custom instrument restored"
+    refresh:
+      refresh_queued: "Refreshing the price in the background."
+    form:
+      template: "Template"
+      template_blank: "Start from scratch"
+      template_hint: "Choosing a template fills the name, symbol and formula. Your own values are kept."
+      name: "Name"
+      symbol: "Symbol"
+      symbol_hint: "2–12 characters: letters, digits and underscores, starting with a letter."
+      currency: "Currency"
+      formula: "Formula"
+      chips_label: "Insert"
+      insert_chip: "Insert %{chip}"
+      insert_security: "Insert a stock, fund or crypto"
+      insert_security_placeholder: "Search by ticker or name"
+      description: "Notes"
+      preview_title: "Live preview"
+      preview_placeholder: "Type a formula to see its price."
+      preview_error: "Could not fetch prices right now. Try again in a moment."
+      history_warning:
+        zero: "This change recalculates the instrument's whole price history. No account holds or trades it yet."
+        one: "This change recalculates the instrument's whole price history. 1 account holds or trades it."
+        other: "This change recalculates the instrument's whole price history. %{count} accounts hold or trade it."
+      help_title: "How formulas work"
+      help:
+        operators: "Operators: + - * / and parentheses. × and · also multiply; ÷ divides."
+        percent: "% divides by 100, so * 103% adds a 3% premium."
+        security: "A stock, fund or crypto goes in brackets: [THYAO:XIST] or [GC=F]."
+        premium: "Example: a quarter coin with a 2% premium is CEYREK * 102%."
+        fixed_amount: "A fixed amount is added by multiplying it by a currency: + 150 * TRY."
+        troy_ounce: "Troy ounce: 31.1034768 grams."
+      create: "Create instrument"
+      save: "Save changes"
+    preview:
+      price_fetch_failed: "Could not fetch prices right now. Try again in a moment."
+      unit: "unit"
+      placeholder: "Type a formula to see its price."
+      nonpositive: "This formula prices at zero or below. Check its weights and assets."
+      price_line: "1 %{symbol} = %{price}"
+      unpriced_total: "This formula has components without a current price."
+      as_of: "As of %{date}"
+      components: "Components"
+      asset: "Asset"
+      weight: "Weight"
+      unit_price: "Unit price"
+      value: "Value"
+      share: "Share"
+      unknown: "Unknown"
+      inverse: "1 %{asset} = %{amount} %{symbol}"
+      stale: "Some rates are out of date (oldest: %{date}). The price uses the newest available ones."
+      unpriced: "No current price for: %{components}."
+      too_small: "The price is extremely small. Check for a missing conversion, such as a troy ounce division."
+    show:
+      price_fetch_failed: "Could not fetch prices right now. Try again in a moment."
+      archived: "Archived"
+      refresh: "Refresh price"
+      edit: "Edit"
+      add_units: "Add units"
+      no_price: "No price yet"
+      as_of: "As of %{date}"
+      chart_title: "Price history (1 year)"
+      chart_empty: "Not enough price history for a chart yet."
+      breakdown_title: "Current price breakdown"
+      definition_title: "Definition"
+      positions_title: "Positions"
+      account: "Account"
+      quantity: "Quantity"
+      value: "Value"
+      unknown: "Unknown"
+      no_positions: "No visible account holds this instrument."
+      used_by_title: "Used by"
+    status_alerts:
+      pending_title: "Calculating price"
+      pending_message: "Prices are being calculated. This usually takes a minute."
+      missing_title: "No price yet"
+      missing_message: "Add units or refresh the price to calculate it."
+      stale_title: "Out-of-date rates"
+      stale_component: "%{label}: last rate from %{date}"
+      missing_component: "%{label}: no rate"
+      stale_instrument: "The newest price is from %{date}."
+      stale_instrument_missing: "The newest price is out of date."
+      stale_advice: "Refresh the price after the sources update."
+    add_units:
+      title: "Add units of %{symbol}"
+      description: "Choose the account to add these units to. Cash does not change; set the cost later from the holding."
+      empty_title: "No investment account to add to"
+      empty_description: "Create an investment or crypto account first, then add units to it."
+      empty_action: "New investment account"
+      archived: "This instrument is archived. Restore it before adding units."

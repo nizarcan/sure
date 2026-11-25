@@ -1,0 +1,44 @@
+<%# locals: (instrument:, status:, stale_components:) %>
+
+<% case status %>
+<% when :pending %>
+  <%= render DS::Alert.new(
+        variant: :info,
+        title: t(".pending_title"),
+        message: t(".pending_message")
+      ) %>
+<% when :missing %>
+  <%= render DS::Alert.new(
+        variant: :warning,
+        title: t(".missing_title"),
+        message: t(".missing_message")
+      ) %>
+<% when :stale %>
+  <%= render DS::Alert.new(variant: :warning, title: t(".stale_title")) do %>
+    <% if stale_components.any? %>
+      <ul class="list-disc space-y-1 pl-4">
+        <% stale_components.each do |entry| %>
+          <li>
+            <% label = entry[:component].security&.display_ticker || entry[:component].currency %>
+            <% if entry[:date] %>
+              <%= t(".stale_component", label: label, date: format_date(entry[:date])) %>
+            <% else %>
+              <%= t(".missing_component", label: label) %>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <% latest_date = instrument.latest_price&.date %>
+      <p>
+        <% if latest_date %>
+          <%= t(".stale_instrument", date: format_date(latest_date)) %>
+        <% else %>
+          <%= t(".stale_instrument_missing") %>
+        <% end %>
+      </p>
+    <% end %>
+
+    <p><%= t(".stale_advice") %></p>
+  <% end %>
+<% end %>

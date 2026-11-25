@@ -1,4 +1,5 @@
 <%= render DS::Dialog.new(frame: "drawer", responsive: true) do |dialog| %>
+  <% custom_instrument = @holding.security.custom? ? @holding.security.custom_instrument : nil %>
   <% dialog.with_header(custom_header: true) do %>
     <div class="flex items-center justify-between">
       <div>
@@ -9,32 +10,42 @@
         <% if (logo = @holding.security.display_logo_url).present? %>
           <%= image_tag logo, loading: "lazy", class: "w-9 h-9 rounded-full" %>
         <% else %>
-          <%= render DS::FilledIcon.new(variant: :text, text: @holding.name, size: "md", rounded: true) %>
+          <%= render DS::FilledIcon.new(variant: :text, text: custom_instrument ? @holding.ticker : @holding.name, size: "md", rounded: true, text_length: custom_instrument ? 2 : 1) %>
         <% end %>
         <%= dialog.close_button %>
       </div>
     </div>
   <% end %>
   <% dialog.with_body do %>
+    <% if custom_instrument && %i[stale missing].include?(custom_instrument.price_status) %>
+      <div class="px-3 pt-2">
+        <%= render DS::Alert.new(
+          message: custom_instrument.price_status == :missing ? t(".custom_price_missing") : t(".custom_price_stale"),
+          variant: :warning
+        ) %>
+      </div>
+    <% end %>
     <% dialog.with_section(title: t(".overview"), open: true) do %>
       <div class="pb-4">
-        <% if @holding.security.provider_status == :provider_unavailable %>
-          <div class="px-3 pt-2">
-            <%= render DS::Alert.new(
-              message: t(".provider_disabled_warning", provider: @holding.security.price_provider&.humanize || "Unknown"),
-              variant: :warning
-            ) %>
-          </div>
-        <% end %>
-        <% if (first_on = @holding.security.first_provider_price_on).present? &&
-              (earliest_trade_date = @holding.trades.minimum(:date)) &&
-              earliest_trade_date < first_on %>
-          <div class="px-3 pt-2">
-            <%= render DS::Alert.new(
-              message: t(".truncated_history_warning", date: l(first_on, format: :long)),
-              variant: :warning
-            ) %>
-          </div>
+        <% unless custom_instrument %>
+          <% if @holding.security.provider_status == :provider_unavailable %>
+            <div class="px-3 pt-2">
+              <%= render DS::Alert.new(
+                message: t(".provider_disabled_warning", provider: @holding.security.price_provider&.humanize || "Unknown"),
+                variant: :warning
+              ) %>
+            </div>
+          <% end %>
+          <% if (first_on = @holding.security.first_provider_price_on).present? &&
+                (earliest_trade_date = @holding.trades.minimum(:date)) &&
+                earliest_trade_date < first_on %>
+            <div class="px-3 pt-2">
+              <%= render DS::Alert.new(
+                message: t(".truncated_history_warning", date: l(first_on, format: :long)),
+                variant: :warning
+              ) %>
+            </div>
+          <% end %>
         <% end %>
         <dl class="space-y-3 px-3 py-2">
           <div data-controller="holding-security-remap">
@@ -44,7 +55,7 @@
                 <%= @holding.ticker %>
                 <% if @holding.security_remapped? && @holding.account.linked? %>
                   <span class="text-xs text-secondary">
-                    (<%= t(".originally", ticker: @holding.provider_security.ticker) %>)
+                    (<%= t(".originally", ticker: @holding.provider_security.display_ticker) %>)
                   </span>
                   <%= icon "lock", size: "xs", class: "text-secondary" %>
                 <% end %>
@@ -57,7 +68,7 @@
               </dd>
             </div>
             <div data-holding-security-remap-target="form" class="hidden mt-3 space-y-3">
-              <% if Security.providers.any? %>
+              <% if Security.providers.any? || Current.family.custom_instruments.active.exists? %>
                 <%= styled_form_with url: remap_security_holding_path(@holding), method: :patch, class: "space-y-3" do |f| %>
                   <div class="form-field combobox">
                     <%= f.combobox :security_id,
@@ -80,6 +91,24 @@
               <% end %>
             </div>
           </div>
+          <% if custom_instrument %>
+            <div class="flex items-start justify-between gap-3 text-sm">
+              <dt class="shrink-0 text-secondary"><%= t(".formula_label") %></dt>
+              <dd class="text-right font-mono text-xs text-primary wrap-anywhere"><%= custom_instrument.formula %></dd>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <dt class="text-secondary"><%= t(".instrument_label") %></dt>
+              <dd>
+                <%= render DS::Link.new(
+                      text: t(".view_instrument"),
+                      variant: :outline,
+                      size: :sm,
+                      href: custom_instrument_path(custom_instrument),
+                      frame: "drawer"
+                    ) %>
+              </dd>
+            </div>
+          <% end %>
           <div class="flex items-center justify-between text-sm">
             <dt class="text-secondary"><%= t(".current_market_price_label") %></dt>
             <dd id="<%= dom_id(@holding, :current_market_price) %>" class="text-primary">
@@ -95,7 +124,7 @@
             </dd>
           </div>
           <div class="flex items-center justify-between text-sm">
-            <dt class="text-secondary"><%= t(".shares_label") %></dt>
+            <dt class="text-secondary"><%= custom_instrument ? t(".units_label") : t(".shares_label") %></dt>
             <dd id="<%= dom_id(@holding, :shares) %>" class="text-primary"><%= format_quantity(@holding.qty, exact: true) %></dd>
           </div>
           <div class="flex items-center justify-between text-sm">
@@ -169,12 +198,18 @@
                   </div>
                   <div>
                     <p class="text-secondary text-xs uppercase"><%= l(trade_entry.date, format: :long) %></p>
-                    <p class="text-primary"><%= t(
-                      ".trade_history_entry",
-                      qty: trade_entry.trade.qty,
-                      security: trade_entry.trade.security.ticker,
-                      price: trade_entry.trade.price_money.format
-                    ) %></p>
+                    <%# Units added without a purchase have no price to show: "at 0"
+                        would read as something the user paid. %>
+                    <% if custom_instrument && trade_entry.trade.qty.positive? && trade_entry.trade.internal_movement? && trade_entry.trade.price.zero? %>
+                      <p class="text-primary"><%= Trade.transfer_in_name(trade_entry.trade.qty, trade_entry.trade.security.display_ticker) %></p>
+                    <% else %>
+                      <p class="text-primary"><%= t(
+                        custom_instrument ? ".trade_history_entry_units" : ".trade_history_entry",
+                        qty: custom_instrument ? format_quantity(trade_entry.trade.qty, exact: true) : trade_entry.trade.qty,
+                        security: trade_entry.trade.security.display_ticker,
+                        price: trade_entry.trade.price_money.format
+                      ) %></p>
+                    <% end %>
                   </div>
                 </li>
               <% end %>
@@ -213,7 +248,7 @@
             <div class="flex items-center justify-between gap-2 p-3 border-b border-tertiary">
               <div class="text-sm space-y-1">
                 <h4 class="text-primary"><%= t(".security_remapped_label") %></h4>
-                <p class="text-secondary"><%= t(".provider_sent", ticker: @holding.provider_security.ticker) %></p>
+                <p class="text-secondary"><%= t(".provider_sent", ticker: @holding.provider_security.display_ticker) %></p>
               </div>
               <%= render DS::Button.new(
                     text: t(".reset_to_provider"),
@@ -223,7 +258,7 @@
                     form: { data: { turbo_frame: "_top" } },
                     confirm: CustomConfirm.new(
                       title: t(".reset_confirm_title"),
-                      body: t(".reset_confirm_body", current: @holding.security.ticker, original: @holding.provider_security.ticker)
+                      body: t(".reset_confirm_body", current: @holding.security.display_ticker, original: @holding.provider_security.display_ticker)
                     )
                   ) %>
             </div>

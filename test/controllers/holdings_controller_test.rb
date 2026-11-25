@@ -3,6 +3,7 @@ require "test_helper"
 class HoldingsControllerTest < ActionDispatch::IntegrationTest
   include SqlQueryCapture
   include EntriesTestHelper
+  include CustomInstrumentTestHelper
 
   setup do
     sign_in users(:family_admin)
@@ -395,6 +396,87 @@ class HoldingsControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to account_path(@holding.account, tab: "holdings")
     assert_equal "Yahoo Finance rate limit exceeded", flash[:alert]
+  end
+
+  # ------------------------------------------------ custom instruments
+
+  test "remap_security accepts a custom instrument of the same family" do
+    instrument = create_custom_instrument(family: @account.family)
+
+    assert_no_difference "Security.count" do
+      patch remap_security_holding_path(@holding), params: { security_id: instrument.security.to_combobox_option.id }
+    end
+
+    assert_redirected_to account_path(@holding.account, tab: "holdings")
+    assert_equal instrument.security_id, @holding.reload.security_id
+  end
+
+  test "remap_security refuses another family's custom instrument" do
+    foreign = create_custom_instrument(family: families(:empty), symbol: "FOREIGN")
+
+    patch remap_security_holding_path(@holding), params: { security_id: foreign.security.to_combobox_option.id }
+
+    assert_redirected_to account_path(@holding.account, tab: "holdings")
+    assert_equal I18n.t("holdings.remap_security.security_not_found"), flash[:alert]
+    assert_not_equal foreign.security_id, @holding.reload.security_id
+  end
+
+  test "a custom holding's drawer shows the formula, units and a link to the instrument" do
+    instrument = create_custom_instrument(family: @account.family)
+    Security::Price.create!(security: instrument.security, date: Date.current, price: 100, currency: "USD")
+    holding = @account.holdings.create!(
+      security: instrument.security, date: Date.current, qty: 10, price: 100, amount: 1000, currency: "USD"
+    )
+
+    get holding_path(holding)
+
+    assert_response :success
+    assert_select "dt", text: I18n.t("holdings.show.formula_label")
+    assert_select "dd", text: instrument.formula
+    assert_select "dt", text: I18n.t("holdings.show.units_label")
+    assert_select "a[href=?]", custom_instrument_path(instrument)
+    assert_includes response.body, "GRAU"
+    assert_not_includes response.body, "CUSTOM-"
+  end
+
+  test "a custom holding without a current price warns instead of offering provider settings" do
+    instrument = create_custom_instrument(family: @account.family)
+    instrument.update_columns(updated_at: 1.hour.ago)
+    holding = @account.holdings.create!(
+      security: instrument.security, date: Date.current, qty: 10, price: 0, amount: 0, currency: "USD"
+    )
+
+    get holding_path(holding)
+
+    assert_response :success
+    assert_includes response.body, I18n.t("holdings.show.custom_price_missing")
+    assert_not_includes response.body, I18n.t("holdings.show.provider_disabled_warning", provider: "Unknown")
+  end
+
+  test "a custom holding with a stale price warns" do
+    instrument = create_custom_instrument(family: @account.family)
+    Security::Price.create!(security: instrument.security, date: 10.days.ago.to_date, price: 100, currency: "USD")
+    holding = @account.holdings.create!(
+      security: instrument.security, date: Date.current, qty: 10, price: 100, amount: 1000, currency: "USD"
+    )
+
+    get holding_path(holding)
+
+    assert_response :success
+    assert_includes response.body, I18n.t("holdings.show.custom_price_stale")
+  end
+
+  test "sync_prices refreshes a custom instrument's computed prices" do
+    instrument = create_custom_instrument(family: @account.family)
+    holding = @account.holdings.create!(
+      security: instrument.security, date: Date.current, qty: 10, price: 100, amount: 1000, currency: "USD"
+    )
+    CustomInstrument::PriceImporter.any_instance.expects(:import).returns([ 1, nil ])
+
+    post sync_prices_holding_path(holding)
+
+    assert_redirected_to account_path(holding.account, tab: "holdings")
+    assert_equal I18n.t("holdings.sync_prices.success"), flash[:notice]
   end
 
   private

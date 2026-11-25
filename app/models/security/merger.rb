@@ -27,6 +27,7 @@ class Security::Merger
         move_holdings!(now)
         Trade.where(security_id: from.id).update_all(security_id: into.id, updated_at: now)
         move_lots!(now)
+        move_custom_instrument_components!(now)
         move_unless_target_has(Security::Price, :date, :currency)
         move_unless_target_has(Security::Split, :ex_date)
         move_taggings!
@@ -75,6 +76,10 @@ class Security::Merger
       lots = HoldingLot.where(security_id: from.id)
       HoldingLot.move!(derived: lots.derived, opening: lots.opening, to: into)
       HoldingLot.where(origin_security_id: from.id).update_all(origin_security_id: into.id, updated_at: now)
+    end
+
+    def move_custom_instrument_components!(now)
+      CustomInstrumentComponent.where(security_id: from.id).update_all(security_id: into.id, updated_at: now)
     end
 
     def move_unless_target_has(model, *key_columns)

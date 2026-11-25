@@ -1,6 +1,37 @@
 <%# locals: (model:, account:) %>
 
-<% type = params[:type] || "buy" %>
+<%# A tampered ?model=... arrives as a String, so only a real nested form
+    payload is read back as the submitted values. %>
+<% submitted = params[:model].is_a?(ActionController::Parameters) ? params[:model] : {} %>
+<% type = params[:type].presence || submitted[:type].presence || "buy" %>
+<% opening = type == Trade::CreateForm::OPENING_TYPE %>
+<% security_trade = %w[buy sell].include?(type) || opening %>
+
+<%#
+  A preselected instrument arrives as the combobox id (`params[:security]`),
+  or as the submitted value when a failed create re-renders the form. Only a
+  security of the current family is accepted, so an id from another family is
+  ignored rather than shown. The option is handed to the combobox beside the
+  async source because a prefilled async value shows its raw id unless the
+  option is present to display.
+%>
+<% requested_security_id = params[:security].presence || submitted[:ticker].presence %>
+<% preselected_security = nil %>
+<% if security_trade && requested_security_id.present? %>
+  <% candidate = Security.for_combobox(requested_security_id, family: Current.family) %>
+  <% preselected_security = candidate if candidate.is_a?(Security) %>
+<% end %>
+<% preselected_option = preselected_security&.to_combobox_option %>
+<% security_search_available = Security.providers.any? || Current.family.custom_instruments.active.exists? %>
+<%#
+  A custom instrument is measured in units, and its known price is only a
+  reference for the field: it is shown as a hint, never filled in, so a
+  different purchase price can still be entered.
+%>
+<% preselected_price = if preselected_security&.custom? && %w[buy sell].include?(type)
+     price = preselected_security.current_price
+     price if price && price.currency.iso_code == (account&.currency || Current.family.currency)
+   end %>
 
 <%= styled_form_with url: trades_path(account_id: account&.id), scope: :model, data: { controller: "trade-form", trade_type: type } do |form| %>
   <div class="space-y-4">
@@ -12,6 +43,7 @@
       <%= form.select :type, [
           [t(".type_buy"), "buy"],
           [t(".type_sell"), "sell"],
+          [t(".type_transfer_in"), Trade::CreateForm::OPENING_TYPE],
           [t(".type_deposit"), "deposit"],
           [t(".type_withdrawal"), "withdrawal"],
           [t(".type_dividend"), "dividend"],
@@ -20,48 +52,61 @@
       { label: t(".type"), selected: type },
       { data: {
           action: "trade-form#changeType",
-          trade_form_url_param: new_trade_path(account_id: account&.id),
+          trade_form_url_param: new_trade_path(account_id: account&.id, security: preselected_option&.id),
           trade_form_key_param: "type",
         }} %>
 
-      <% if %w[buy sell].include?(type) %>
-        <% if Security.providers.any? %>
+      <% if security_trade %>
+        <% if security_search_available %>
           <div class="form-field combobox">
             <%= form.combobox :ticker,
-                            securities_path(country_code: Current.family.country),
+                            preselected_option ? [ preselected_option ] : [],
+                            async_src: securities_path(country_code: Current.family.country),
+                            value: preselected_option&.id,
                             name_when_new: "model[manual_ticker]",
                             label: t(".holding"),
                             placeholder: t(".ticker_placeholder"),
                             required: true %>
           </div>
         <% else %>
-          <%= form.text_field :manual_ticker, label: t(".holding"), placeholder: t(".ticker_placeholder"), required: true %>
+          <%= form.text_field :manual_ticker, label: t(".holding"), placeholder: t(".ticker_placeholder"), required: true, value: submitted[:manual_ticker] %>
         <% end %>
       <% end %>
 
       <% if %w[dividend interest].include?(type) %>
         <% account_securities = account ? account.traded_standard_securities : [] %>
-        <% security_options = account_securities.map { |s| [ s.name.presence || s.ticker, s.exchange_operating_mic.present? ? "#{s.ticker}|#{s.exchange_operating_mic}" : s.ticker ] } %>
+        <% security_options = account_securities.map { |s| [ s.name.presence || s.display_ticker, s.exchange_operating_mic.present? ? "#{s.ticker}|#{s.exchange_operating_mic}" : s.ticker ] } %>
         <% select_options = { label: type == "dividend" ? t(".holding") : t(".holding_optional") } %>
         <% select_options[:include_blank] = true if type == "interest" %>
         <% select_options[:required] = true if type == "dividend" %>
         <%= form.select :ticker, security_options, select_options %>
       <% end %>
 
-      <%= form.date_field :date, label: true, value: model.date || Date.current, required: true %>
+      <%= form.date_field :date, label: true, value: submitted[:date].presence || model.date || Date.current, required: true %>
 
-      <% unless %w[buy sell].include?(type) %>
-        <%= form.money_field :amount, label: t(".amount"), value: model.amount, required: true, default_currency: account&.currency %>
+      <% unless security_trade %>
+        <%= form.money_field :amount, label: t(".amount"), value: submitted[:amount].presence&.to_d, required: true, default_currency: account&.currency %>
       <% end %>
 
       <% if %w[deposit withdrawal].include?(type) %>
         <%= form.collection_select :transfer_account_id, accessible_accounts.writable_by(Current.user).visible.alphabetically, :id, :name, { prompt: t(".account_prompt"), label: t(".account") } %>
       <% end %>
 
+      <% if security_trade %>
+        <%= form.number_field :qty, label: t(".qty"), placeholder: "10", min: 0.000000000000000001, step: "any", required: true, value: submitted[:qty] %>
+      <% end %>
+
+      <% if opening %>
+        <%= form.hidden_field :currency, value: account&.currency || Current.family.currency %>
+        <p class="text-xs text-secondary"><%= t(".transfer_in_hint") %></p>
+      <% end %>
+
       <% if %w[buy sell].include?(type) %>
-        <%= form.number_field :qty, label: t(".qty"), placeholder: "10", min: 0.000000000000000001, step: "any", required: true %>
-        <%= form.money_field :price, label: t(".price"), step: "any", precision: 10, required: true, default_currency: account&.currency %>
-        <%= form.money_field :fee, label: t(".fee"), step: "any", min: 0, default_currency: account&.currency %>
+        <%= form.money_field :price, label: preselected_security&.custom? ? t(".price_per_unit") : t(".price"), step: "any", precision: 10, required: true, default_currency: account&.currency, value: submitted[:price].present? ? submitted[:price].to_d : nil %>
+        <% if type == "buy" && preselected_price %>
+          <p class="text-xs text-secondary"><%= t(".current_price_hint", price: format_money(preselected_price)) %></p>
+        <% end %>
+        <%= form.money_field :fee, label: t(".fee"), step: "any", min: 0, default_currency: account&.currency, value: submitted[:fee].present? ? submitted[:fee].to_d : nil %>
       <% end %>
     </div>
 

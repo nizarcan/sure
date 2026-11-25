@@ -971,6 +971,20 @@ class FamilyTest < ActiveSupport::TestCase
     assert_nil family.earliest_activity_date
   end
 
+  test "destroying a family destroys its custom instruments and their securities after accounts" do
+    family = Family.create!(name: "Custom destroy")
+    account = family.accounts.create!(name: "Brokerage", currency: "USD", balance: 0, accountable: Investment.new)
+    instrument = family.custom_instruments.create!(name: "Gram gold", symbol: "FAMDEST", currency: "USD", formula: "XAU")
+    account.holdings.create!(security: instrument.security, date: Date.current, qty: 1, price: 10, amount: 10, currency: "USD")
+    security_id = instrument.security_id
+
+    assert_difference [ "CustomInstrument.count", "Security.count", "Account.count" ], -1 do
+      family.destroy!
+    end
+
+    assert_not Security.exists?(security_id)
+  end
+
   private
     def assert_tags_version_changes(family)
       before = family.tags_version

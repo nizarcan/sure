@@ -4,6 +4,7 @@ require "bigdecimal"
 
 class HoldingTest < ActiveSupport::TestCase
   include EntriesTestHelper, SecuritiesTestHelper
+  include CustomInstrumentTestHelper
 
   setup do
     @account = families(:empty).accounts.create!(name: "Test Brokerage", balance: 20000, cash_balance: 0, currency: "USD", accountable: Investment.new)
@@ -18,6 +19,24 @@ class HoldingTest < ActiveSupport::TestCase
 
     assert_in_delta expected_amzn_weight, @amzn.weight, 0.001
     assert_in_delta expected_nvda_weight, @nvda.weight, 0.001
+  end
+
+  test "ticker reads the custom instrument's symbol" do
+    instrument = create_custom_instrument(family: @account.family)
+    holding = Holding.new(security: instrument.security, account: @account, date: Date.current,
+                          qty: 1, price: 1, amount: 1, currency: "USD")
+
+    assert_equal "GRAU", holding.ticker
+    assert_equal "Gram gold", holding.name
+  end
+
+  test "name falls back to the ticker when the security has no name" do
+    instrument = create_custom_instrument(family: @account.family)
+    instrument.security.update_column(:name, nil)
+    holding = Holding.new(security: instrument.security, account: @account, date: Date.current,
+                          qty: 1, price: 1, amount: 1, currency: "USD")
+
+    assert_equal "GRAU", holding.name
   end
 
   test "calculates portfolio weight after converting foreign-currency holdings" do

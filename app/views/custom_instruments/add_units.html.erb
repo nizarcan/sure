@@ -1,0 +1,46 @@
+<%= render DS::Dialog.new do |dialog| %>
+  <% dialog.with_header(title: t(".title", symbol: @instrument.symbol)) %>
+  <% dialog.with_body do %>
+    <% if @accounts.any? %>
+      <div class="space-y-3">
+        <p class="text-sm text-secondary"><%= t(".description") %></p>
+
+        <ul class="divide-y divide-subdued overflow-hidden rounded-lg bg-container-inset">
+          <% @accounts.each do |account| %>
+            <li>
+              <%= render DS::Link.new(
+                    text: account.name,
+                    variant: "ghost",
+                    href: new_trade_path(
+                      account_id: account.id,
+                      type: "transfer_in",
+                      security: "#{@instrument.security.ticker}||custom"
+                    ),
+                    icon: "plus",
+                    icon_position: :right,
+                    frame: :modal,
+                    class: "w-full justify-between p-4 text-sm"
+                  ) %>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% else %>
+      <%= render DS::EmptyState.new(
+            icon: "wallet",
+            title: t(".empty_title"),
+            description: t(".empty_description")
+          ) do |empty_state| %>
+        <% empty_state.with_action do %>
+          <%= render DS::Link.new(
+                text: t(".empty_action"),
+                variant: "primary",
+                href: new_investment_path(return_to: add_units_custom_instrument_path(@instrument, account_created: 1)),
+                icon: "plus",
+                frame: :modal
+              ) %>
+        <% end %>
+      <% end %>
+    <% end %>
+  <% end %>
+<% end %>

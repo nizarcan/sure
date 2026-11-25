@@ -110,6 +110,52 @@ class Api::V1::SecuritiesControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ @trade_security.id ], response_data["securities"].map { |security| security["id"] }
   end
 
+  test "shows a custom security by its display symbol" do
+    instrument = @family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "USD", formula: "2 * USD"
+    )
+    @account.holdings.create!(
+      security: instrument.security, date: Date.current, qty: 1, price: 10, amount: 10, currency: "USD"
+    )
+
+    get api_v1_security_url(instrument.security), headers: api_headers(@api_key)
+
+    assert_response :success
+    response_data = JSON.parse(response.body)
+    assert_equal "GRAU", response_data["ticker"]
+    assert_equal "custom", response_data["kind"]
+  end
+
+  test "filters securities by a custom instrument's symbol" do
+    instrument = @family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "USD", formula: "2 * USD"
+    )
+    @account.holdings.create!(
+      security: instrument.security, date: Date.current, qty: 1, price: 10, amount: 10, currency: "USD"
+    )
+
+    get api_v1_securities_url, params: { ticker: "grau" }, headers: api_headers(@api_key)
+
+    assert_response :success
+    assert_equal [ instrument.security.id ], JSON.parse(response.body)["securities"].map { |security| security["id"] }
+  end
+
+  test "another family's custom security stays unreadable even when this family's holding points at it" do
+    foreign = families(:empty).custom_instruments.create!(
+      name: "Foreign gram", symbol: "FOREIGN", currency: "USD", formula: "2 * USD"
+    )
+    @account.holdings.create!(
+      security: foreign.security, date: Date.current, qty: 1, price: 10, amount: 10, currency: "USD"
+    )
+
+    get api_v1_securities_url, headers: api_headers(@api_key)
+    assert_response :success
+    assert_not_includes JSON.parse(response.body)["securities"].map { |security| security["id"] }, foreign.security.id
+
+    get api_v1_security_url(foreign.security), headers: api_headers(@api_key)
+    assert_response :not_found
+  end
+
   test "filters securities by exchange operating mic" do
     get api_v1_securities_url, params: { exchange_operating_mic: " xnas " }, headers: api_headers(@api_key)
 

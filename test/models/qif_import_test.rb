@@ -1369,6 +1369,77 @@ class QifImportTest < ActiveSupport::TestCase
     end
   end
 
+  test "import! resolves the family's own custom instrument by its symbol" do
+    instrument = @family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "USD", formula: "2 * USD"
+    )
+    qif = <<~QIF
+      !Type:Security
+      NGRAU
+      SGRAU
+      TStock
+      ^
+      !Type:Invst
+      D1/17'22
+      NBuy
+      YGRAU
+      I50.00
+      Q2
+      U100.00
+      T100.00
+      ^
+    QIF
+    import = QifImport.create!(family: @family, account: accounts(:investment))
+    import.update!(raw_file_str: qif)
+    import.generate_rows_from_csv
+    import.sync_mappings
+
+    Security::Resolver.any_instance.expects(:resolve).never
+
+    assert_difference "Trade.count", 1 do
+      import.import!
+    end
+
+    trade = Trade.joins(:entry).where(entries: { import_id: import.id }).sole
+    assert_equal instrument.security, trade.security
+    assert_equal "GRAU", trade.security.display_ticker
+  end
+
+  test "import! fails clearly on another family's CUSTOM- ticker instead of attaching to it" do
+    foreign = families(:empty).custom_instruments.create!(
+      name: "Foreign gram", symbol: "FOREIGN", currency: "USD", formula: "2 * USD"
+    )
+    qif = <<~QIF
+      !Type:Security
+      NFOREIGN
+      S#{foreign.security.ticker}
+      TStock
+      ^
+      !Type:Invst
+      D1/17'22
+      NBuy
+      YFOREIGN
+      I50.00
+      Q2
+      U100.00
+      T100.00
+      ^
+    QIF
+    import = QifImport.create!(family: @family, account: accounts(:investment))
+    import.update!(raw_file_str: qif)
+    import.generate_rows_from_csv
+    import.sync_mappings
+
+    assert_no_difference [ "Trade.count", "Entry.count" ] do
+      assert_raises Import::MappingError do
+        import.import!
+      end
+    end
+
+    assert_empty foreign.security.reload.trades
+    assert_equal foreign.security.kind, "custom"
+  end
+
   test "import! creates Transaction records for dividend and cash rows" do
     import = QifImport.create!(family: @family, account: accounts(:investment))
     import.update!(raw_file_str: SAMPLE_INVST_QIF)

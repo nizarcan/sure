@@ -1394,6 +1394,19 @@ class InvestmentStatementTest < ActiveSupport::TestCase
 
   # ---------------------------------------------- allocation by classification
 
+  test "allocation by kind gives a family's custom instrument its own bucket" do
+    account = create_investment_account(balance: 1500, cash_balance: 500)
+    instrument = @family.custom_instruments.create!(name: "Gram gold", symbol: "GRAUK", currency: "USD", formula: "2 * USD")
+    Holding.create!(account: account, security: instrument.security, date: Date.current,
+                    qty: 10, price: 100, amount: 1000, currency: "USD")
+
+    segments = @statement.allocation_by("kind").index_by(&:id)
+
+    assert_equal 1000, segments["custom"].amount.amount
+    assert_equal 500, segments["cash"].amount.amount
+    assert_not segments.key?("standard")
+  end
+
   test "allocation groups by asset class, and cash counts as liquidity" do
     account = create_investment_account(balance: 3000, cash_balance: 1000)
     equity = create_classified_security(asset_class: "equity", asset_sub_class: "stock")

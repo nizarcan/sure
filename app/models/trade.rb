@@ -137,6 +137,20 @@ class Trade < ApplicationRecord
       prefix = type == "buy" ? "Buy" : "Sell"
       "#{prefix} #{qty.to_d.abs} shares of #{ticker}"
     end
+
+    # The name of a trade that only adds units the user already owned. Shared
+    # by the trade form and the trade editor, so editing the quantity of such
+    # a trade keeps saying units were added instead of calling it a purchase.
+    def transfer_in_name(quantity, ticker)
+      I18n.t("trades.create.transfer_in_name", qty: quantity_for_name(quantity), symbol: ticker)
+    end
+
+    private
+      # A quantity as typed, without trailing zeros ("10", "10.5").
+      def quantity_for_name(value)
+        formatted = value.to_d.to_s("F")
+        formatted.include?(".") ? formatted.sub(/0+\z/, "").delete_suffix(".") : formatted
+      end
   end
 
   def unrealized_gain_loss

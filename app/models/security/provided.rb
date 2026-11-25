@@ -237,6 +237,8 @@ module Security::Provided
   # nil so the security is skipped rather than queried against an incompatible
   # provider (e.g. MFAPI scheme codes sent to TwelveData).
   def price_data_provider
+    return nil if custom?
+
     if price_provider.present?
       assigned = self.class.provider_for(price_provider)
       return assigned if assigned.present?
@@ -248,6 +250,10 @@ module Security::Provided
   # Returns the health status of this security's provider link.
   # Delegates to price_data_provider to avoid duplicating provider lookup logic.
   def provider_status
+    if custom?
+      return custom_instrument&.price_status == :ok ? :ok : :stale
+    end
+
     resolved = price_data_provider
 
     # Had a specific provider assigned but it's now unavailable
@@ -260,6 +266,13 @@ module Security::Provided
   end
 
   def find_or_fetch_price(date: Date.current, cache: true)
+    if custom?
+      price = prices.find_by(date: date)
+      return price if price.present?
+
+      return prices.where(date: (date - 7.days)..date).order(date: :desc).first
+    end
+
     price = prices.find_by(date: date)
 
     return price if price.present?
@@ -309,6 +322,8 @@ module Security::Provided
   private :log_failed_price_fetch
 
   def import_provider_details(clear_cache: false)
+    return if custom?
+
     unless price_data_provider.present?
       Rails.logger.warn("No provider configured for Security.import_provider_details")
       return
@@ -391,6 +406,13 @@ module Security::Provided
   end
 
   def import_provider_prices(start_date:, end_date:, clear_cache: false)
+    if custom?
+      instrument = custom_instrument
+      return [ 0, nil ] unless instrument
+
+      return instrument.import_prices(start_date: start_date, end_date: end_date, clear_cache: clear_cache)
+    end
+
     unless price_data_provider.present?
       Rails.logger.warn("No provider configured for Security.import_provider_prices")
       return 0

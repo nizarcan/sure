@@ -13,6 +13,7 @@ class Security::Resolver
   # 4. Create offline security if no match is found in either DB or provider
   def resolve
     return nil if symbol.blank?
+    return nil if Security.custom_ticker?(symbol)
 
     exact_match_from_db ||
       exact_match_from_provider ||

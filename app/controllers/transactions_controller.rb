@@ -408,7 +408,7 @@ class TransactionsController < ApplicationController
         original_date: I18n.l(@entry.date, format: :long))
 
       new_entry = @entry.account.entries.create!(
-        name: params[:trade_name] || Trade.build_name(is_sell ? "sell" : "buy", qty, security.ticker),
+        name: params[:trade_name] || Trade.build_name(is_sell ? "sell" : "buy", qty, security.display_ticker),
         date: @entry.date,
         amount: signed_amount,
         currency: @entry.currency,
@@ -898,6 +898,14 @@ class TransactionsController < ApplicationController
     def resolve_security_for_conversion
       user_country = Current.family.country
 
+      custom = lookup_custom_security
+      if custom == :foreign_custom
+        flash[:alert] = t("transactions.convert_to_trade.errors.security_not_found")
+        redirect_back_or_to transactions_path
+        return nil
+      end
+      return custom if custom.is_a?(Security)
+
       if params[:security_id] == "__custom__"
         # User selected "Enter custom ticker" - check for combobox selection or manual entry
         if params[:ticker].present?
@@ -928,6 +936,9 @@ class TransactionsController < ApplicationController
         end
       elsif params[:security_id].present?
         found = Security.find_by(id: params[:security_id])
+        if found&.custom? && found.custom_instrument&.family_id != Current.family.id
+          found = nil
+        end
         unless found
           flash[:alert] = t("transactions.convert_to_trade.errors.security_not_found")
           redirect_back_or_to transactions_path
@@ -961,6 +972,35 @@ class TransactionsController < ApplicationController
           redirect_back_or_to transactions_path
         end
       end
+    end
+
+    # A custom instrument of this family named by the conversion form, the
+    # family's own custom id found by its primary key, or :foreign_custom when
+    # a CUSTOM- id resolves to nothing. :not_custom means "ordinary security,
+    # use the existing lookup".
+    def lookup_custom_security
+      instrument = matching_custom_instrument(params[:custom_ticker])
+      if instrument
+        return :foreign_custom if instrument.archived?
+
+        return instrument.security
+      end
+
+      [ params[:security_id], params[:ticker], params[:custom_ticker] ].compact_blank.each do |value|
+        resolved = Security.for_combobox(value, family: Current.family)
+        next if resolved == :not_custom
+
+        return resolved || :foreign_custom
+      end
+
+      :not_custom
+    end
+
+    def matching_custom_instrument(value)
+      symbol = value.to_s.strip.upcase
+      return nil if symbol.blank?
+
+      Current.family.custom_instruments.detect { |instrument| instrument.symbol.upcase == symbol }
     end
 
     # Validate submitted trade values and infer a missing value from the locked amount.

@@ -27,6 +27,19 @@ class AccountTest < ActiveSupport::TestCase
     assert_equal(-3, positions.first.lowest_qty)
   end
 
+  test "negative_positions includes custom instruments" do
+    account = accounts(:investment)
+    instrument = @family.custom_instruments.create!(name: "Gram gold", symbol: "GRAUN", currency: "USD", formula: "2 * USD")
+    Holding.new(account: account, security: instrument.security, date: Date.current,
+                qty: -1, price: 100, amount: -100, currency: "USD").save!(validate: false)
+
+    positions = account.negative_positions
+
+    position = positions.find { |candidate| candidate.security == instrument.security }
+    assert position, "a custom instrument's negative position must be reported"
+    assert_equal BigDecimal("-1"), position.lowest_qty.to_d
+  end
+
   test "negative_positions ignores linked accounts" do
     account = accounts(:investment)
     account.entries.create!(

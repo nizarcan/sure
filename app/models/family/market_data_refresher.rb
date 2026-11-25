@@ -21,8 +21,7 @@ class Family::MarketDataRefresher
     end
 
     def refresh_security_prices
-      return unless Security.provider
-
+      provider_available = Security.provider.present?
       windows = importers.each_with_object({}) do |importer, merged|
         importer.price_windows.each do |security_id, window|
           merged[security_id] = window.merge(merged[security_id])
@@ -31,6 +30,10 @@ class Family::MarketDataRefresher
       return if windows.empty?
 
       Security.online.where(id: windows.keys).find_each do |security|
+        # A custom instrument is priced from its components and has no provider
+        # of its own, so it is refreshed without one.
+        next unless provider_available || security.custom?
+
         window = windows[security.id]
         _, provider_error = security.import_provider_prices(start_date: window.start_date, end_date: window.end_date, clear_cache: true)
         report_provider_error(provider_error, provider: security.price_data_provider, security_id: security.id) if provider_error.present?

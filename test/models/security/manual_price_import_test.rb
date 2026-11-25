@@ -292,6 +292,18 @@ class Security::ManualPriceImportTest < ActiveSupport::TestCase
     assert_equal %w[NZD], @security.prices.distinct.pluck(:currency)
   end
 
+  test "rejects custom instruments" do
+    instrument = families(:dylan_family).custom_instruments.create!(
+      name: "Gram gold", symbol: "MANUALC", currency: "USD", formula: "XAU"
+    )
+
+    error = assert_raises(Security::ManualPriceImport::Invalid) do
+      instrument.security.import_manual_prices!([ row(1.day.ago, "20", currency: "USD") ], accounts: @accounts)
+    end
+
+    assert_equal [ { index: nil, message: "prices cannot be imported for a custom instrument" } ], error.errors
+  end
+
   private
     def import(rows)
       @security.import_manual_prices!(rows, accounts: @accounts)

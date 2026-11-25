@@ -102,6 +102,18 @@ class Security::MergerTest < ActiveSupport::TestCase
     assert_equal @listed, Security::Merger.new(from: stale, into: @listed).merge!
   end
 
+  test "moves custom instrument components onto the target" do
+    instrument = families(:dylan_family).custom_instruments.create!(
+      name: "Merge component", symbol: "MRGC", currency: "USD", formula: "1 * [#{@placeholder.ticker}]"
+    )
+    component = instrument.components.sole
+
+    Security::Merger.new(from: @placeholder, into: @listed).merge!
+
+    assert_equal @listed.id, component.reload.security_id
+    assert_not Security.exists?(@placeholder.id)
+  end
+
   private
     def create_holding(security, date:, qty:, **attributes)
       @account.holdings.create!(security: security, date: date, qty: qty, price: 10, amount: qty * 10, currency: "USD", **attributes)

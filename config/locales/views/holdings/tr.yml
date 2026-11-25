@@ -6,6 +6,7 @@ tr:
     cost_basis_cell:
       cancel: İptal
       per_share_label: "Hisse başına"
+      per_unit_label: "Birim başına"
       overwrite_confirm_body: Bu işlem, mevcut %{current} maliyet bazını değiştirecektir.
       overwrite_confirm_title: Maliyet bazının üzerine yazılsın mı?
       save: Kaydet
@@ -26,7 +27,9 @@ tr:
     holding:
       no_cost_basis: Maliyet bazı yok
       per_share: Hisse başına
+      per_unit: Birim başına
       shares: "%{qty} adet hisse"
+      units: "%{qty} %{symbol}"
       unknown: "--"
     index:
       positions:
@@ -87,6 +90,7 @@ tr:
       security_remapped_label: Menkul kıymet yeniden eşlendi
       settings: Ayarlar
       shares_label: Hisseler
+      units_label: Birimler
       switch_provider_button: Değiştir
       switch_provider_description: "%{provider} devre dışı. Bu menkul kıymeti başka
         bir etkin sağlayıcıdan arayın."
@@ -95,6 +99,12 @@ tr:
       ticker_label: Sembol
       total_return_label: Toplam Getiri
       trade_history_entry: "%{qty} adet %{security} %{price} fiyatından"
+      trade_history_entry_units: "%{qty} %{security} %{price} fiyatından"
+      formula_label: Formül
+      instrument_label: Enstrüman
+      view_instrument: Enstrümanı görüntüle
+      custom_price_stale: Bu enstrümanın fiyatı güncel değil. Fiyatı yenileyin veya bileşenlerini Ayarlar'dan kontrol edin.
+      custom_price_missing: Bu enstrümanın henüz fiyatı yok. Bileşenlerinden fiyatlanır ve bileşenler hâlâ yükleniyor olabilir.
       truncated_history_warning: Fiyat geçmişi yalnızca %{date} tarihinden itibaren
         mevcuttur. Bu tarihten öncesi için seçilen sağlayıcıdan veri bulunmamaktadır
         — bu, varlığın işlem tarihinizden sonra listelenmesi veya sağlayıcının mevcut

@@ -189,7 +189,7 @@
                         <%# Converted in the controller, at the trade's own date: gain.value is carried in the currency the position is held in, and labelling it family currency here was reporting a EUR figure as USD. %>
                         <% amount = data[:realized_gain_by_trade][trade.id] %>
                         <div class="flex justify-between pl-2" data-testid="realized-gain-line">
-                          <span class="text-primary"><%= trade.security.ticker %></span>
+                          <span class="text-primary"><%= trade.security.display_ticker %></span>
                           <span class="whitespace-nowrap <%= amount ? "" : "text-secondary" %>" style="<%= amount ? "color: #{gain.color}" : "" %>">
                             <%= amount ? format_money(amount) : t("reports.investment_performance.no_data") %>
                           </span>

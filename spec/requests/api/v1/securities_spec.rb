@@ -96,7 +96,7 @@ RSpec.describe 'API V1 Securities', type: :request do
                 schema: { type: :string }
       parameter name: :kind, in: :query, required: false,
                 description: 'Filter by security kind',
-                schema: { type: :string, enum: %w[standard cash] }
+                schema: { type: :string, enum: %w[standard cash custom] }
       parameter name: :offline, in: :query, required: false,
                 description: 'Filter by offline status. When supplied, must be true or false.',
                 schema: { type: :boolean }

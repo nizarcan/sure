@@ -28,7 +28,10 @@ class Holding < ApplicationRecord
   scope :with_locked_cost_basis, -> { where(cost_basis_locked: true) }
   scope :with_unlocked_cost_basis, -> { where(cost_basis_locked: false) }
 
-  delegate :ticker, to: :security
+  # A custom instrument stores a globally unique CUSTOM-<uuid> ticker, so
+  # every user-facing ticker here reads the symbol the instrument shows.
+  delegate :display_ticker, to: :security
+  alias_method :ticker, :display_ticker
 
   # Answers derived from the attributes go when a change to them is saved,
   # as on #reload: `changed?` is false again by then and cannot tell.

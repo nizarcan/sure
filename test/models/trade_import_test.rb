@@ -137,4 +137,108 @@ class TradeImportTest < ActiveSupport::TestCase
     assert_equal "Buy", buy_trade.investment_activity_label, "Buy trade should have 'Buy' activity label"
     assert_equal "Sell", sell_trade.investment_activity_label, "Sell trade should have 'Sell' activity label"
   end
+
+  test "imports a trade for the family's own custom instrument by its symbol" do
+    instrument = @import.family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "USD", formula: "2 * USD"
+    )
+
+    import_csv = <<~CSV
+      date,ticker,qty,price,currency,account,name
+      01/01/2024,GRAU,10,150.00,USD,TestAccount1,Gram gold purchase
+    CSV
+
+    @import.update!(
+      account: nil,
+      raw_file_str: import_csv,
+      date_col_label: "date",
+      ticker_col_label: "ticker",
+      qty_col_label: "qty",
+      price_col_label: "price",
+      currency_col_label: "currency",
+      account_col_label: "account",
+      date_format: "%m/%d/%Y",
+      signage_convention: "inflows_positive"
+    )
+    @import.generate_rows_from_csv
+    @import.mappings.create! key: "TestAccount1", create_when_empty: true, type: "Import::AccountMapping"
+    @import.reload
+
+    Security::Resolver.any_instance.expects(:resolve).never
+
+    @import.publish
+
+    assert_equal "complete", @import.status
+    trade = Trade.joins(:entry).where(entries: { import_id: @import.id }).sole
+    assert_equal instrument.security, trade.security
+    assert_equal "GRAU", trade.security.display_ticker
+  end
+
+  test "imports a trade for the family's own custom instrument by its CUSTOM- ticker" do
+    instrument = @import.family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "USD", formula: "2 * USD"
+    )
+
+    import_csv = <<~CSV
+      date,ticker,qty,price,currency,account,name
+      01/01/2024,#{instrument.security.ticker},10,150.00,USD,TestAccount1,Gram gold purchase
+    CSV
+
+    @import.update!(
+      account: nil,
+      raw_file_str: import_csv,
+      date_col_label: "date",
+      ticker_col_label: "ticker",
+      qty_col_label: "qty",
+      price_col_label: "price",
+      currency_col_label: "currency",
+      account_col_label: "account",
+      date_format: "%m/%d/%Y",
+      signage_convention: "inflows_positive"
+    )
+    @import.generate_rows_from_csv
+    @import.mappings.create! key: "TestAccount1", create_when_empty: true, type: "Import::AccountMapping"
+    @import.reload
+
+    @import.publish
+
+    assert_equal "complete", @import.status
+    assert_equal instrument.security, Trade.joins(:entry).where(entries: { import_id: @import.id }).sole.security
+  end
+
+  test "fails clearly on another family's CUSTOM- ticker instead of attaching to it" do
+    foreign = families(:empty).custom_instruments.create!(
+      name: "Foreign gram", symbol: "FOREIGN", currency: "USD", formula: "2 * USD"
+    )
+
+    import_csv = <<~CSV
+      date,ticker,qty,price,currency,account,name
+      01/01/2024,#{foreign.security.ticker},10,150.00,USD,TestAccount1,Foreign purchase
+    CSV
+
+    @import.update!(
+      account: nil,
+      raw_file_str: import_csv,
+      date_col_label: "date",
+      ticker_col_label: "ticker",
+      qty_col_label: "qty",
+      price_col_label: "price",
+      currency_col_label: "currency",
+      account_col_label: "account",
+      date_format: "%m/%d/%Y",
+      signage_convention: "inflows_positive"
+    )
+    @import.generate_rows_from_csv
+    @import.mappings.create! key: "TestAccount1", create_when_empty: true, type: "Import::AccountMapping"
+    @import.reload
+
+    assert_no_difference [ "Trade.count", "Entry.count" ] do
+      @import.publish
+    end
+
+    assert_equal "failed", @import.status
+    assert_includes @import.error, "Could not resolve security"
+    assert_equal foreign.security, foreign.security.reload
+    assert_empty foreign.security.trades
+  end
 end

@@ -585,4 +585,19 @@ class Account::MarketDataImporterTest < ActiveSupport::TestCase
     # No new rates should be added due to error
     assert_equal before, after
   end
+
+  test "prices custom securities even when no securities provider is configured" do
+    family = Family.create!(name: "Custom", currency: "USD")
+    account = family.accounts.create!(name: "Brokerage", currency: "USD", balance: 0, accountable: Investment.new)
+    instrument = family.custom_instruments.create!(
+      name: "Dollar", symbol: "ACCTCD", currency: "USD", formula: "1 * USD"
+    )
+    account.holdings.create!(security: instrument.security, date: Date.current, qty: 1, price: 1, amount: 1, currency: "USD")
+
+    Security.stubs(:provider).returns(nil)
+
+    Account::MarketDataImporter.new(account).import_security_prices
+
+    assert Security::Price.where(security: instrument.security).exists?
+  end
 end

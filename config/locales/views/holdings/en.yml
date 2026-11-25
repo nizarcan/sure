@@ -32,13 +32,16 @@ en:
       set_cost_basis_header: "Set cost basis for %{ticker}"
       total_cost_basis_label: Total cost basis
       per_share_label: "Per share"
+      per_unit_label: "Per unit"
       cancel: Cancel
       save: Save
       overwrite_confirm_title: Overwrite cost basis?
       overwrite_confirm_body: "This will replace the current cost basis of %{current}."
     holding:
       per_share: per share
+      per_unit: per unit
       shares: "%{qty} shares"
+      units: "%{qty} %{symbol}"
       unknown: "--"
       no_cost_basis: No cost basis
     index:
@@ -101,14 +104,21 @@ en:
       reset_confirm_body: "This will change the security from %{current} back to %{original} and move all associated trades."
       ticker_label: Ticker
       trade_history_entry: "%{qty} shares of %{security} at %{price}"
+      trade_history_entry_units: "%{qty} %{security} at %{price}"
       total_return_label: Total Return
       unknown: Unknown
+      formula_label: Formula
+      instrument_label: Instrument
+      view_instrument: View instrument
+      custom_price_stale: The price of this instrument is out of date. Refresh the price or check its components in Settings.
+      custom_price_missing: This instrument has no price yet. It is priced from its components, which may still be loading.
       cost_basis_locked_label: Cost basis is locked
       cost_basis_locked_description: Your manually set cost basis won't be changed by syncs.
       unlock_cost_basis: Unlock
       unlock_confirm_title: Unlock cost basis?
       unlock_confirm_body: This will allow the cost basis to be updated by provider syncs or trade calculations.
       shares_label: Shares
+      units_label: Units
       book_value_label: Book Value
       market_value_label: Market Value
       market_data_label: Market data

@@ -74,6 +74,66 @@ class Api::V1::SecurityPricesControllerTest < ActionDispatch::IntegrationTest
     assert_equal @security.id, response_data.dig("security", "id")
   end
 
+  test "stores and reads prices for the family's own custom instrument" do
+    instrument = @family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "USD", formula: "2 * USD"
+    )
+    @account.holdings.create!(
+      security: instrument.security, date: Date.current, qty: 1, price: 10, amount: 10, currency: "USD"
+    )
+    price = Security::Price.create!(
+      security: instrument.security, date: Date.current, price: BigDecimal("12.5"), currency: "USD"
+    )
+
+    get api_v1_security_price_url(price), headers: api_headers(@api_key)
+
+    assert_response :success
+    assert_equal "GRAU", JSON.parse(response.body).dig("security", "ticker")
+  end
+
+  test "refuses to import prices for a custom instrument" do
+    instrument = @family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "USD", formula: "2 * USD"
+    )
+    @account.entries.create!(
+      date: 3.days.ago.to_date, name: "Buy GRAU", amount: 20, currency: "USD",
+      entryable: Trade.new(security: instrument.security, qty: 2, price: 10, currency: "USD")
+    )
+    Account.any_instance.expects(:sync_later).never
+
+    with_self_hosting do
+      post api_v1_security_prices_url,
+           params: { security_id: instrument.security.id, prices: [ close(1.day.ago, "20") ] },
+           headers: api_headers(write_key), as: :json
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal(
+      [ { "index" => nil, "message" => "prices cannot be imported for a custom instrument" } ],
+      JSON.parse(response.body)["errors"]
+    )
+    assert_empty instrument.security.prices
+  end
+
+  test "another family's custom security prices stay unreadable even when this family's holding points at it" do
+    foreign = families(:empty).custom_instruments.create!(
+      name: "Foreign gram", symbol: "FOREIGN", currency: "USD", formula: "2 * USD"
+    )
+    @account.holdings.create!(
+      security: foreign.security, date: Date.current, qty: 1, price: 10, amount: 10, currency: "USD"
+    )
+    price = Security::Price.create!(
+      security: foreign.security, date: Date.current, price: BigDecimal("5"), currency: "USD"
+    )
+
+    get api_v1_security_prices_url, headers: api_headers(@api_key)
+    assert_response :success
+    assert_not_includes JSON.parse(response.body)["security_prices"].map { |row| row["id"] }, price.id
+
+    get api_v1_security_price_url(price), headers: api_headers(@api_key)
+    assert_response :not_found
+  end
+
   test "returns not found for another family's security price" do
     get api_v1_security_price_url(@other_price), headers: api_headers(@api_key)
 

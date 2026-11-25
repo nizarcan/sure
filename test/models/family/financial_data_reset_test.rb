@@ -24,6 +24,42 @@ class Family::FinancialDataResetTest < ActiveSupport::TestCase
     assert User.exists?(@user.id)
   end
 
+  test "destructive reset removes custom instruments, their components and their securities" do
+    instrument = @family.custom_instruments.create!(
+      name: "Reset gram", symbol: "RSETG", currency: "USD", formula: "2 * USD"
+    )
+    @family.custom_instruments.create!(
+      name: "Reset double gram", symbol: "RSETD", currency: "USD", formula: "2 * RSETG"
+    )
+    account = @family.accounts.create!(
+      name: "Reset Custom Brokerage", balance: 100, currency: "USD", accountable: Investment.new
+    )
+    account.entries.create!(
+      date: Date.current, name: "Buy RSETG", amount: 10, currency: "USD",
+      entryable: Trade.new(security: instrument.security, qty: 1, price: 10, currency: "USD")
+    )
+    account.holdings.create!(
+      security: instrument.security, date: Date.current, qty: 1, price: 10, amount: 10, currency: "USD"
+    )
+    other_family = families(:empty)
+    other_instrument = other_family.custom_instruments.create!(
+      name: "Other gram", symbol: "OTHERG", currency: "USD", formula: "2 * USD"
+    )
+    result = Family::FinancialDataReset.new(user: @user).call
+
+    assert_operator result.before_counts[:custom_instruments], :>=, 2
+    assert_operator result.before_counts[:custom_instrument_components], :>=, 2
+
+    result = Family::FinancialDataReset.new(user: @user, dry_run: false, confirmed: true).call
+
+    assert_equal 0, result.after_counts.values.sum
+    assert_not CustomInstrument.exists?(instrument.id)
+    assert_not Security.exists?(instrument.security_id)
+    assert_equal other_instrument, other_instrument.reload
+    assert_not_nil other_family.custom_instruments.find_by(id: other_instrument.id)
+    assert_equal 1, other_instrument.components.count
+  end
+
   test "provider item associations are the syncable family associations" do
     associations = Family::FinancialDataReset.provider_item_associations
 

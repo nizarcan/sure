@@ -1,0 +1,9 @@
+<%= render DS::Dialog.new(width: "lg") do |dialog| %>
+  <% dialog.with_header(title: t(".title")) %>
+  <% dialog.with_body do %>
+    <%= render "form",
+          instrument: @instrument,
+          new_record: false,
+          affected_account_count: @affected_account_count %>
+  <% end %>
+<% end %>

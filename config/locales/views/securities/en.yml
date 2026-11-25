@@ -3,7 +3,9 @@ en:
   securities:
     combobox:
       display: "%{symbol} - %{name} (%{exchange})"
+      display_custom: "%{symbol} - %{name}"
       exchange_label: "%{symbol} (%{exchange})"
+      custom: Custom
     providers:
       twelve_data: Twelve Data
       yahoo_finance: Yahoo Finance

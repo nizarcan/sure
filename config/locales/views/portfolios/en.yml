@@ -11,6 +11,7 @@ en:
         accounts: Accounts
         avg_cost: Avg cost
         cost_basis_per_share: Cost basis per share
+        cost_basis_per_unit: Cost basis per unit
         day_change: Day
         qty: Qty
         security: Security

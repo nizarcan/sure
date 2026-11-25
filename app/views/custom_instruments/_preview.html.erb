@@ -1,0 +1,65 @@
+<%# locals: (quote: nil, error: nil, symbol: nil, formula: nil, currency: nil) %>
+
+<% display_symbol = symbol.presence || t(".unit") %>
+<% error_state = error.present? || (quote && !quote.valid?) || (quote && quote.price && quote.nonpositive?) %>
+
+<div data-custom-instrument-preview-state="<%= error_state ? "error" : "ok" %>">
+  <% if error.present? %>
+    <p class="text-xs text-destructive" role="alert"><%= error %></p>
+  <% elsif quote.nil? %>
+    <p class="text-xs text-secondary"><%= t(".placeholder") %></p>
+  <% elsif !quote.valid? %>
+    <p class="text-xs text-destructive" role="alert"><%= quote.error %></p>
+  <% elsif quote.price && quote.nonpositive? %>
+    <p class="text-xs text-destructive" role="alert"><%= t(".nonpositive") %></p>
+  <% else %>
+    <div class="space-y-3">
+      <div class="space-y-1">
+        <% if quote.price %>
+          <p class="text-sm font-medium text-primary privacy-sensitive">
+            <%= t(".price_line", symbol: display_symbol, price: format_money(Money.new(quote.price, quote.currency))) %>
+          </p>
+        <% else %>
+          <p class="text-sm text-secondary"><%= t(".unpriced_total") %></p>
+        <% end %>
+
+        <% if quote.as_of %>
+          <p class="text-xs text-secondary"><%= t(".as_of", date: format_date(quote.as_of)) %></p>
+        <% end %>
+      </div>
+
+      <% warnings = custom_instrument_quote_warnings(quote) %>
+      <% if warnings.any? %>
+        <%= render DS::Alert.new(variant: :warning, message: warnings.to_sentence) %>
+      <% end %>
+
+      <% if quote.lines.any? %>
+        <div class="space-y-1">
+          <p class="text-xs font-medium text-secondary"><%= t(".components") %></p>
+          <%= render DS::Table.new(rows: quote.lines, inset: true, label: t(".components")) do |table| %>
+            <% table.with_column(t(".asset")) { |line| line.label } %>
+            <% table.with_column(t(".weight"), numeric: true) { |line| custom_instrument_weight(line.weight) } %>
+            <% table.with_column(t(".unit_price"), numeric: true, class: "privacy-sensitive") do |line| %>
+              <%= line.unit_price ? format_money(line.unit_price) : t(".unknown") %>
+            <% end %>
+            <% table.with_column(t(".value"), numeric: true, class: "privacy-sensitive") do |line| %>
+              <%= line.value ? format_money(line.value) : t(".unknown") %>
+            <% end %>
+            <% table.with_column(t(".share"), numeric: true) do |line| %>
+              <%= line.value ? custom_instrument_share(line.share) : t(".unknown") %>
+            <% end %>
+          <% end %>
+        </div>
+      <% end %>
+
+      <% if quote.inverse %>
+        <p class="text-xs text-secondary">
+          <%= t(".inverse",
+                asset: quote.lines.first.label,
+                amount: number_with_precision(quote.inverse, precision: 4, strip_insignificant_zeros: true),
+                symbol: display_symbol) %>
+        </p>
+      <% end %>
+    </div>
+  <% end %>
+</div>

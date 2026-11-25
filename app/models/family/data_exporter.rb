@@ -133,14 +133,16 @@ class Family::DataExporter
       generate_sanitized_csv do |csv|
         csv << [ "date", "account_name", "ticker", "quantity", "price", "amount", "currency" ]
 
-        # Only export trades from accounts belonging to this family
+        # Only export trades from accounts belonging to this family. The
+        # security's custom instrument is eager-loaded because the displayed
+        # ticker of a custom security lives on it.
         @family.trades
-          .includes(:security, entry: :account)
+          .includes(security: :custom_instrument, entry: :account)
           .find_each do |trade|
             csv << [
               trade.entry.date&.iso8601,
               trade.entry.account.name,
-              trade.security.ticker,
+              trade.security.display_ticker,
               trade.qty.to_s,
               trade.price.to_s,
               trade.entry.amount.to_s,
@@ -336,6 +338,12 @@ class Family::DataExporter
         }.to_json
       end
 
+      # Export custom instruments after the family's taxonomy and before
+      # anything that references a security. Dependencies come before their
+      # dependents (see #custom_instruments_in_dependency_order) so an import
+      # can create each formula's components first.
+      custom_instrument_lines.each { |line| lines << line }
+
       # Export merchants (only family merchants)
       @family.merchants.find_each do |merchant|
         lines << {
@@ -501,7 +509,7 @@ class Family::DataExporter
       # ahead of it, even when an import arrives in chunks.
       lot_total_costs = HoldingLot.derived.joins(:account).where(accounts: { family_id: @family.id })
         .where.not(manual_total_cost: nil).pluck(:source_entry_id, :manual_total_cost).to_h
-      @family.trades.includes(:security, :lot_source_entry, entry: :account)
+      @family.trades.includes(:lot_source_entry, { security: :custom_instrument }, entry: :account)
         .order(Arel.sql("entries.date ASC, entries.created_at ASC, CASE WHEN trades.qty < 0 THEN 1 ELSE 0 END ASC, entries.id ASC")).each do |trade|
         lines << {
           type: "Trade",
@@ -510,7 +518,8 @@ class Family::DataExporter
             entry_id: trade.entry.id,
             account_id: trade.entry.account_id,
             security_id: trade.security_id,
-            ticker: trade.security.ticker,
+            ticker: trade.security.display_ticker,
+            custom_instrument_id: trade.security.custom_instrument&.id,
             security_name: trade.security.name,
             exchange_operating_mic: trade.security.exchange_operating_mic,
             date: trade.entry.date,
@@ -534,14 +543,15 @@ class Family::DataExporter
       end
 
       # Export holding snapshots for backup and portfolio verification.
-      @family.holdings.includes(:account, :security).find_each do |holding|
+      @family.holdings.includes(:account, security: :custom_instrument).find_each do |holding|
         lines << {
           type: "Holding",
           data: {
             id: holding.id,
             account_id: holding.account_id,
             security_id: holding.security_id,
-            ticker: holding.security.ticker,
+            ticker: holding.security.display_ticker,
+            custom_instrument_id: holding.security.custom_instrument&.id,
             security_name: holding.security.name,
             exchange_operating_mic: holding.security.exchange_operating_mic,
             exchange_mic: holding.security.exchange_mic,
@@ -611,6 +621,49 @@ class Family::DataExporter
 
     def exportable_transactions
       @family.transactions.merge(Entry.excluding_split_parents)
+    end
+
+    # One line per instrument, in dependency order. Archived rows travel with
+    # their archived_at so an import can restore them once every instrument
+    # exists: a formula may name a component that is itself archived.
+    def custom_instrument_lines
+      custom_instruments_in_dependency_order.map do |instrument|
+        {
+          type: "CustomInstrument",
+          data: {
+            id: instrument.id,
+            security_id: instrument.security_id,
+            name: instrument.name,
+            symbol: instrument.symbol,
+            formula: instrument.formula,
+            currency: instrument.currency,
+            description: instrument.description,
+            archived_at: instrument.archived_at
+          }
+        }.to_json
+      end
+    end
+
+    # Orders instruments so a component is exported before the formula that
+    # names it. The depth is computed in memory from the loaded components,
+    # and a cycle (which validation prevents) is cut rather than looping.
+    def custom_instruments_in_dependency_order
+      instruments = @family.custom_instruments.includes(:components).to_a
+      by_security_id = instruments.index_by(&:security_id)
+      depths = {}
+
+      depth_of = lambda do |instrument, visiting|
+        return depths[instrument.id] if depths.key?(instrument.id)
+        return 1 if visiting.include?(instrument.id)
+
+        visiting = visiting + [ instrument.id ]
+        children = instrument.components.filter_map { |component| by_security_id[component.security_id] }
+        depths[instrument.id] = 1 + children.map { |child| depth_of.call(child, visiting) }.max.to_i
+      end
+
+      instruments.sort_by do |instrument|
+        [ depth_of.call(instrument, []), instrument.symbol, instrument.id ]
+      end
     end
 
     def ndjson_exportable_transactions

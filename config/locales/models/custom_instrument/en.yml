@@ -1,0 +1,40 @@
+---
+en:
+  activerecord:
+    attributes:
+      custom_instrument:
+        archived_at: Archived at
+        currency: Currency
+        description: Notes
+        formula: Formula
+        name: Name
+        symbol: Symbol
+      custom_instrument_component:
+        currency: Currency
+        position: Position
+        security: Security
+        weight: Weight
+    errors:
+      models:
+        custom_instrument:
+          attributes:
+            base:
+              in_use: "This instrument is used by a trade, a holding or another instrument. Archive it instead."
+            formula:
+              cycle: "This formula would create a cycle between instruments."
+              nesting_too_deep: "Instruments cannot be nested more than 5 levels deep."
+              no_components: "A formula must resolve to at least one component."
+              too_many_components: "A formula can have at most 20 components."
+              weight_out_of_range: "A component's weight is too large or too small."
+            name:
+              too_long: "is too long (maximum is 100 characters)"
+            symbol:
+              currency_code: "cannot be a currency code"
+              taken: "has already been used in this family"
+        custom_instrument_component:
+          attributes:
+            base:
+              one_source: "must be either a currency or a security, not both"
+    models:
+      custom_instrument: Custom instrument
+      custom_instrument_component: Custom instrument component
