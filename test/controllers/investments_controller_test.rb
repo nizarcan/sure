@@ -206,20 +206,41 @@ class InvestmentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, I18n.t("accounts.create.instrument_not_found")
   end
 
-  test "an instrument account needs a positive quantity" do
+  test "an instrument account can start empty" do
+    instrument = create_custom_instrument(family: @user.family, name: "Gram gold", symbol: "GRAU")
+
+    assert_difference "Account.count", 1 do
+      assert_no_difference "Trade.count" do
+        post investments_url, params: { account: {
+          name: "Gold units", balance: "0", currency: "instrument:#{instrument.id}", accountable_type: "Investment"
+        } }
+      end
+    end
+
+    account = @user.family.accounts.find_by!(name: "Gold units")
+    assert_redirected_to account_url(account)
+    assert_equal instrument, account.custom_instrument
+    assert_equal 0, account.unit_balance
+
+    result = Account::UnitBalance.new(account).add(quantity: 5, date: Date.current)
+    assert result.success?
+    assert_equal 5, account.reload.unit_balance
+  end
+
+  test "an instrument account refuses a negative quantity" do
     instrument = create_custom_instrument(family: @user.family, name: "Gram gold", symbol: "GRAU")
 
     assert_no_difference "Account.count" do
       post investments_url, params: { account: {
         name: "Gold units",
-        balance: "0",
+        balance: "-1",
         currency: "instrument:#{instrument.id}",
         accountable_type: "Investment"
       } }
     end
 
     assert_response :unprocessable_entity
-    assert_includes response.body, I18n.t("accounts.create.quantity_must_be_positive")
+    assert_includes response.body, I18n.t("accounts.create.quantity_cannot_be_negative")
     assert_select "select[name='account[currency]'] option[selected][value=?]", "instrument:#{instrument.id}"
   end
 

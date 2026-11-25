@@ -136,6 +136,30 @@ class CustomInstrumentsTest < ApplicationSystemTestCase
     shot "15-instrument-account"
   end
 
+  test "opens an empty instrument account and fills it later" do
+    instrument = @family.custom_instruments.create!(
+      name: "Gram gold", symbol: "GRAU", currency: "TRY", formula: "XAU / 31.1034768"
+    )
+    instrument.security.prices.create!(date: Date.current, price: 2500, currency: "TRY")
+
+    visit new_investment_path
+    find("select[name='account[currency]']").select("Gram gold (GRAU)")
+    fill_in "Account name", with: "Empty gold"
+    click_button "Create Account"
+
+    assert_text "0 GRAU"
+    account = @family.accounts.find_by!(name: "Empty gold")
+    assert_equal instrument, account.custom_instrument
+    assert_equal 0, account.unit_balance
+    shot "23-empty-instrument-account"
+
+    visit new_account_unit_balance_path(account, mode: "add")
+    fill_in "Quantity (GRAU)", with: "12"
+    click_button "Add units"
+    assert_text "+12 GRAU"
+    assert_equal 12, account.reload.unit_balance
+  end
+
   test "creates an instrument account from the currency picker and changes its units" do
     instrument = @family.custom_instruments.create!(
       name: "Gram gold", symbol: "GRAU", currency: "TRY", formula: "XAU / 31.1034768"

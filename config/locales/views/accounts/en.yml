@@ -42,7 +42,7 @@ en:
       data_not_available: Data not available for the selected period
     create:
       instrument_not_found: "That instrument is not available. Choose another."
-      quantity_must_be_positive: "Enter how many units you own."
+      quantity_cannot_be_negative: "The quantity cannot be negative. Enter 0 to start with an empty account."
       success: "%{type} account created"
     logo_caption:
       appstore: From the App Store

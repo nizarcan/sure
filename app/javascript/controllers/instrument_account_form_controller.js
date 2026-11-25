@@ -13,6 +13,12 @@ export default class extends Controller {
     "priceField",
   ];
 
+  // A form re-rendered with an instrument already selected (after an error,
+  // or opened from ?instrument=) starts in quantity mode too.
+  connect() {
+    if (this.#selectedInstrument()) this.apply();
+  }
+
   change(event) {
     if (event.target !== this.currencyTarget) return;
 
@@ -26,6 +32,7 @@ export default class extends Controller {
         this.amountLabelTarget.dataset.moneyLabel;
       this.priceFieldTarget.classList.add("hidden");
       if (this.hasOperatorRowTarget) this.operatorRowTarget.style.display = "";
+      this.amountTarget.required = true;
       return;
     }
 
@@ -35,6 +42,8 @@ export default class extends Controller {
     // Units are not money: no rounding to the currency's precision, and the
     // arithmetic operator row does not apply.
     this.amountTarget.step = "any";
+    // An instrument account may start empty: a blank quantity means 0.
+    this.amountTarget.required = false;
     if (this.hasOperatorRowTarget) this.operatorRowTarget.style.display = "none";
     this.#showPriceField(instrument);
   }

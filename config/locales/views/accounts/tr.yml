@@ -38,7 +38,7 @@ tr:
       warning_transactions_kept: Mevcut tüm işlemler ve bakiyeler korunacaktır
     create:
       instrument_not_found: "Bu enstrüman kullanılamıyor. Başka bir tane seçin."
-      quantity_must_be_positive: "Kaç biriminiz olduğunu girin."
+      quantity_cannot_be_negative: "Miktar negatif olamaz. Boş bir hesapla başlamak için 0 girin."
       success: "%{type} hesabı oluşturuldu"
     destroy:
       cannot_delete_linked: Bağlı bir hesap silinemez. Lütfen önce bağlantısını kesin.

@@ -199,10 +199,11 @@ module AccountableResource
       return render_instrument_form_error(rebuilt_instrument_account, t("accounts.create.instrument_not_found")) unless instrument
 
       quantity = account_params[:balance].to_d
-      if quantity <= 0
+      # Zero opens an empty account to fill later; only a negative is refused.
+      if quantity.negative?
         return render_instrument_form_error(
           rebuilt_instrument_account(instrument, quantity: account_params[:balance]),
-          t("accounts.create.quantity_must_be_positive")
+          t("accounts.create.quantity_cannot_be_negative")
         )
       end
 
@@ -220,12 +221,10 @@ module AccountableResource
           instrument_account_attributes(instrument),
           opening_balance_date: opening_balance_date - 1.day
         )
-        result = Account::UnitBalance.new(@account).add(
-          quantity: quantity,
-          date: opening_balance_date,
-          unit_price: unit_price
-        )
-        unless result.success?
+        result = if quantity.positive?
+          Account::UnitBalance.new(@account).add(quantity: quantity, date: opening_balance_date, unit_price: unit_price)
+        end
+        if result && !result.success?
           @error_message = result.message
           raise ActiveRecord::Rollback
         end
